@@ -1,0 +1,9 @@
+# Node
+node_modules
+dist
+.DS_Store
+
+# Rust / Tauri
+target/
+src-tauri/target/
+**/*.log

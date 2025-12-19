@@ -25,16 +25,10 @@ fn count_lines(path: &Path) -> Option<usize> {
             Ok(n) => {
                 count += buffer[..n].iter().filter(|&&b| b == b'\n').count();
             }
-            Err(_) => return None, // Binary or read error
+            Err(_) => return None,
         }
     }
-    // If file is not empty and doesn't end with newline, we might miss one line? 
-    // Usually line count = newlines. For 1 line file without \n, it is 0 newlines.
-    // Editors display "1 line". 
-    // Let's stick to newline count for simplicity, or add 1 if file > 0 size?
-    // Let's just count newlines. 
-    Some(count + 1) // Approximation: most files have content. Empty file 0 lines?
-    // If size is 0, return 0.
+    Some(count + 1)
 }
 
 #[tauri::command]
@@ -67,41 +61,8 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
                      let size = p.metadata().map(|m| m.len()).unwrap_or(0);
                      let mut line_count = None;
                      
-                     if !is_dir {
-                         // Simple heuristic: skip large files or known binaries if needed
-                         // For now, try to count everything.
-                         if size < 10 * 1024 * 1024 { // Skip > 10MB for speed
-                             if let Ok(file) = File::open(p) {
-                                 // Check if binary roughly? 
-                                 // We'll just count newlines. 
-                                 // To avoid reading whole binary files, maybe skip if extension looks binary?
-                                 // Let's rely on size limit.
-                                 if size > 0 {
-                                     let mut reader = io::BufReader::new(file);
-                                     let mut buffer = [0; 8 * 1024];
-                                     let mut count = 0;
-                                     let mut valid = true;
-                                     
-                                     loop {
-                                         match reader.read(&mut buffer) {
-                                             Ok(0) => break,
-                                             Ok(n) => {
-                                                 // Check for binary bytes to bail early? 
-                                                 // if buffer[..n].contains(&0) { valid = false; break; } 
-                                                 
-                                                 count += buffer[..n].iter().filter(|&&b| b == b'\n').count();
-                                             }
-                                             Err(_) => { valid = false; break; }
-                                         }
-                                     }
-                                     if valid {
-                                         line_count = Some(count + 1);
-                                     }
-                                 } else {
-                                     line_count = Some(0);
-                                 }
-                             }
-                         }
+                     if !is_dir && size < 10 * 1024 * 1024 {
+                         line_count = count_lines(p);
                      }
 
                      entries.push(FileEntry {

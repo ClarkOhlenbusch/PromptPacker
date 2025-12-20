@@ -1,11 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
-
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-}
+import { getFileSystem, FileEntry } from "../services/FileSystem";
 
 export async function generateAutoPreamble(files: FileEntry[]): Promise<string> {
   const parts: string[] = [];
@@ -28,12 +21,13 @@ export async function generateAutoPreamble(files: FileEntry[]): Promise<string> 
 
 async function scanManifests(rootFiles: FileEntry[]): Promise<string | null> {
   let output = "";
+  const fs = getFileSystem();
   
   // Package.json (Node/JS)
   const pkgJson = rootFiles.find(f => f.relative_path === 'package.json');
   if (pkgJson) {
     try {
-      const content = await invoke<string>("read_file_content", { path: pkgJson.path });
+      const content = await fs.readFileContent(pkgJson.path);
       const pkg = JSON.parse(content);
       output += `Project: ${pkg.name || 'Untitled'}\n`;
       if (pkg.description) output += `Description: ${pkg.description}\n`;
@@ -53,7 +47,7 @@ async function scanManifests(rootFiles: FileEntry[]): Promise<string | null> {
   const cargoToml = rootFiles.find(f => f.relative_path === 'Cargo.toml');
   if (cargoToml) {
     try {
-      const content = await invoke<string>("read_file_content", { path: cargoToml.path });
+      const content = await fs.readFileContent(cargoToml.path);
       // Simple regex extraction to avoid TOML parser dependency
       const name = content.match(/name\s*=\s*\"(.*?)\"/)?.[1];
       const desc = content.match(/description\s*=\s*\"(.*?)\"/)?.[1];
@@ -74,8 +68,10 @@ async function scanReadme(rootFiles: FileEntry[]): Promise<string | null> {
   const readme = rootFiles.find(f => f.relative_path.toLowerCase() === 'readme.md');
   if (!readme) return null;
 
+  const fs = getFileSystem();
+
   try {
-    const content = await invoke<string>("read_file_content", { path: readme.path });
+    const content = await fs.readFileContent(readme.path);
     const lines = content.split('\n');
     
     // 1. Try to find an architecture diagram or specific header

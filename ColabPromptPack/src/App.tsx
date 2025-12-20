@@ -1,25 +1,18 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { getFileSystem, FileEntry } from "./services/FileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
 import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-  line_count?: number;
-}
-
 export default function App() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  
+  const fs = getFileSystem();
   
   // Selection State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -33,14 +26,17 @@ export default function App() {
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [showOutput, setShowOutput] = useState(false);
 
+  // Close Overlay Logic
+  const handleCloseOverlay = () => {
+    // Send message to parent window (content script)
+    window.parent.postMessage({ type: 'CLOSE_PROMPTPACK' }, '*');
+  };
+
   async function handleOpenFolder() {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-      });
+      const selected = await fs.openFolder();
 
-      if (selected && typeof selected === 'string') {
+      if (selected) {
         setProjectPath(selected);
         scanProject(selected);
       }
@@ -52,7 +48,7 @@ export default function App() {
   async function scanProject(path: string) {
     setLoading(true);
     try {
-      const entries = await invoke<FileEntry[]>("scan_project", { path });
+      const entries = await fs.scanProject(path);
       setFiles(entries);
       // Auto-select README
       const readme = entries.find(e => e.relative_path.toLowerCase() === 'readme.md');
@@ -168,6 +164,17 @@ export default function App() {
   
   return (
     <div className="h-screen w-screen bg-white text-packer-grey flex flex-col font-sans relative selection:bg-[#0069C3] selection:text-white">
+      {/* Overlay Close Button */}
+      <div className="absolute top-0 right-0 p-2 z-50">
+        <button 
+            onClick={handleCloseOverlay}
+            className="bg-white/80 hover:bg-red-50 text-packer-text-muted hover:text-red-500 p-1.5 rounded-full shadow-sm border border-slate-200 transition-all"
+            title="Close PromptPack"
+        >
+            <X size={20} strokeWidth={2.5}/>
+        </button>
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         

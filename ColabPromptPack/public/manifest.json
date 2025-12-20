@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "PromptPack Colab",
+  "version": "0.1.0",
+  "description": "Pack Google Colab cells into AI prompts.",
+  "action": {
+    "default_title": "Open PromptPack"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://colab.research.google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://colab.research.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["index.html", "assets/*", "tauri.svg", "vite.svg"],
+      "matches": ["https://colab.research.google.com/*"]
+    }
+  ]
+}

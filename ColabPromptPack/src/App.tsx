@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getFileSystem, FileEntry } from "./services/FileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
@@ -25,12 +25,18 @@ export default function App() {
   // Output
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [showOutput, setShowOutput] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Close Overlay Logic
   const handleCloseOverlay = () => {
     // Send message to parent window (content script)
     window.parent.postMessage({ type: 'CLOSE_PROMPTPACK' }, '*');
   };
+
+  // Auto-scan on mount
+  useEffect(() => {
+    handleOpenFolder();
+  }, []);
 
   async function handleOpenFolder() {
     try {
@@ -50,12 +56,22 @@ export default function App() {
     try {
       const entries = await fs.scanProject(path);
       setFiles(entries);
-      // Auto-select README
-      const readme = entries.find(e => e.relative_path.toLowerCase() === 'readme.md');
-      if (readme) {
-        setSelectedPaths(prev => new Set(prev).add(readme.path));
-        setTier1Paths(prev => new Set(prev).add(readme.path));
-      }
+      
+      // Auto-select ALL files as Tier 1 (Full) by default
+      // This reduces clicks for the "Copy Entire Notebook" use case
+      const allPaths = new Set<string>();
+      const allTier1 = new Set<string>();
+      
+      entries.forEach(e => {
+        if (!e.is_dir) {
+            allPaths.add(e.path);
+            allTier1.add(e.path);
+        }
+      });
+      
+      setSelectedPaths(allPaths);
+      setTier1Paths(allTier1);
+
     } catch (e) {
       console.error("Scan failed", e);
     } finally {
@@ -145,8 +161,10 @@ export default function App() {
   const copyToClipboard = async () => {
       if (!generatedPrompt) return;
       try {
-          await navigator.clipboard.writeText(generatedPrompt);
-          alert("Copied to clipboard!");
+        // Use parent postMessage because we are in an IFrame
+        window.parent.postMessage({ type: 'COPY_TO_CLIPBOARD', text: generatedPrompt }, '*');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       } catch (e) {
           console.error("Copy failed", e);
       }
@@ -160,6 +178,37 @@ export default function App() {
      const newTier1 = new Set(tier1Paths);
      newTier1.add(entry.path);
      setTier1Paths(newTier1);
+  };
+
+  const handleSelectAll = () => {
+    if (files.length === 0) return;
+
+    // Check current state to decide next state
+    // State 0: Not all selected -> Go to Select All (Sum)
+    // State 1: All selected (Sum) -> Go to Select All (Full)
+    // State 2: All selected (Full) -> Clear All
+
+    const allSelected = files.every(f => selectedPaths.has(f.path));
+    const allFull = files.every(f => tier1Paths.has(f.path) || f.is_dir);
+
+    if (!allSelected) {
+        // Select All (Sum)
+        const newSelected = new Set<string>();
+        files.forEach(f => newSelected.add(f.path));
+        setSelectedPaths(newSelected);
+        setTier1Paths(new Set()); // Reset full
+    } else if (!allFull) {
+        // Select All (Full)
+        const newTier1 = new Set<string>();
+        files.forEach(f => {
+            if (!f.is_dir) newTier1.add(f.path);
+        });
+        setTier1Paths(newTier1);
+    } else {
+        // Clear All
+        setSelectedPaths(new Set());
+        setTier1Paths(new Set());
+    }
   };
   
   return (
@@ -183,13 +232,26 @@ export default function App() {
            <div className="h-12 px-4 flex items-center justify-between border-b border-packer-border bg-slate-50/50">
               <div className="flex items-center gap-3">
                  <span className="text-xs font-bold text-packer-text-muted uppercase tracking-wider">Project Files</span>
+                 
+                 {/* Select All Button */}
+                 {files.length > 0 && (
+                     <button 
+                       onClick={handleSelectAll} 
+                       className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                       title="Cycle: Select All (Sum) -> Select All (Full) -> Clear"
+                     >
+                        <ListChecks size={12} strokeWidth={2.5} />
+                        <span className="text-[10px] font-bold uppercase tracking-tight">All</span>
+                     </button>
+                 )}
+                 
                  <button 
                    onClick={handleOpenFolder} 
-                   className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                   className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95 ml-1"
                  >
                     <FolderOpen size={12} strokeWidth={2.5} />
                     <span className="text-[10px] font-bold uppercase tracking-tight">
-                       {projectPath ? "Change" : "Open"}
+                       {projectPath ? "Refresh" : "Scan"}
                     </span>
                  </button>
               </div>
@@ -371,7 +433,8 @@ export default function App() {
                       <div className="flex gap-4">
                         <button onClick={() => setShowOutput(false)} className="px-6 py-2.5 hover:bg-slate-50 border border-packer-border rounded font-semibold text-packer-text-muted transition">Close</button>
                         <button onClick={copyToClipboard} className="px-8 py-2.5 bg-[#0069C3] hover:bg-[#1a252f] rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-blue-500/20 transition transform active:scale-[0.98]">
-                            <Copy size={18} strokeWidth={2.5}/> Copy to Clipboard
+                            {copied ? <CheckCircle2 size={18} strokeWidth={2.5}/> : <Copy size={18} strokeWidth={2.5}/>}
+                            {copied ? "Copied!" : "Copy to Clipboard"}
                         </button>
                       </div>
                   </div>

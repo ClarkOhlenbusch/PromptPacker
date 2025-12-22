@@ -1,23 +1,17 @@
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
-
-  try {
-    // Try sending the message first
-    await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY" });
-  } catch (err) {
-    // If it fails (e.g., content script not loaded), inject the script
-    console.log("Content script not found, injecting...", err);
-    
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"]
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id) {
+    chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY" })
+      .catch(err => {
+        console.warn("PromptPack: Content script not ready. Please refresh the page.", err);
       });
-      
-      // Retry sending the message
-      await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY" });
-    } catch (injectionErr) {
-      console.error("Failed to inject or communicate with content script:", injectionErr);
-    }
+  }
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === "copy-notebook-full" && tab.id) {
+    chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_QUICK_COPY" })
+      .catch(err => {
+        console.warn("PromptPack: Quick Copy failed. Refresh page?", err);
+      });
   }
 });

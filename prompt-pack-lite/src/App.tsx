@@ -32,6 +32,7 @@ export default function App() {
   // Output
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [showOutput, setShowOutput] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   async function handleOpenFolder() {
     try {
@@ -150,7 +151,8 @@ export default function App() {
       if (!generatedPrompt) return;
       try {
           await navigator.clipboard.writeText(generatedPrompt);
-          alert("Copied to clipboard!");
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
       } catch (e) {
           console.error("Copy failed", e);
       }
@@ -364,7 +366,8 @@ export default function App() {
                       <div className="flex gap-4">
                         <button onClick={() => setShowOutput(false)} className="px-6 py-2.5 hover:bg-slate-50 border border-packer-border rounded font-semibold text-packer-text-muted transition">Close</button>
                         <button onClick={copyToClipboard} className="px-8 py-2.5 bg-[#0069C3] hover:bg-[#1a252f] rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-blue-500/20 transition transform active:scale-[0.98]">
-                            <Copy size={18} strokeWidth={2.5}/> Copy to Clipboard
+                            {copied ? <CheckCircle2 size={18} strokeWidth={2.5}/> : <Copy size={18} strokeWidth={2.5}/>}
+                            {copied ? "Copied!" : "Copy to Clipboard"}
                         </button>
                       </div>
                   </div>

@@ -115,19 +115,47 @@ function formatSize(bytes: number): string {
 function compressCode(code: string): string {
   const lines = code.split('\n');
   const result: string[] = [];
-  const keywords = ['import', 'export', 'class', 'function', 'interface', 'type', 'const', 'let', 'var', 'def', 'struct', 'enum', 'pub', 'fn', 'async'];
+  const keywords = ['import', 'export', 'class', 'function', 'interface', 'type', 'const', 'let', 'var', 'def', 'struct', 'enum', 'pub', 'fn', 'async', 'return'];
   
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed) continue;
     
+    // 1. Preserve Comments (Crucial for notebooks)
+    if (trimmed.startsWith('#') || trimmed.startsWith('//')) {
+      result.push(line);
+      continue;
+    }
+
     const firstWord = trimmed.split(' ')[0];
-    if (keywords.includes(firstWord) || trimmed.startsWith('@') || trimmed.endsWith('{') || trimmed.endsWith(':') || trimmed.startsWith('import') || trimmed.startsWith('from') || trimmed.startsWith('use') || trimmed.startsWith('#include')) {
+
+    // 2. Preserve standard structural keywords
+    const isKeyword = keywords.includes(firstWord) || 
+                      trimmed.startsWith('@') || 
+                      trimmed.endsWith('{') || 
+                      trimmed.endsWith(':') || 
+                      trimmed.startsWith('import') || 
+                      trimmed.startsWith('from') || 
+                      trimmed.startsWith('use') || 
+                      trimmed.startsWith('#include');
+
+    // 3. Preserve Assignments (e.g., "df = ...", "model = ...")
+    // Avoids catching "==" comparisons
+    const isAssignment = trimmed.includes('=') && !trimmed.includes('==') && !trimmed.startsWith('if ') && !trimmed.startsWith('while ') && !trimmed.startsWith('for ');
+
+    // 4. Preserve Top-Level Function Calls (e.g., "df.head()", "model.fit()")
+    // We check indentation. If it's 0 indent, it's likely a main script action.
+    const indent = line.match(/^\s*/)?.[0]?.length || 0;
+    const isTopLevelCall = indent === 0 && trimmed.includes('(') && trimmed.includes(')');
+
+    if (isKeyword || isAssignment || isTopLevelCall) {
        result.push(line);
     } else {
+       // Collapse other lines (internal logic, large data dicts, etc.)
        if (result.length > 0 && !result[result.length - 1].includes('...')) {
-           const indent = line.match(/^\s*/)?.[0] || "";
-           result.push(indent + "// ...");
+           const currentIndent = line.match(/^\s*/)?.[0] || "";
+           result.push(currentIndent + "// ...");
        }
     }
   }

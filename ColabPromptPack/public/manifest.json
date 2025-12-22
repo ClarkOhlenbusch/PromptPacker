@@ -25,8 +25,17 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["index.html", "assets/*", "tauri.svg", "vite.svg"],
+      "resources": ["index.html", "assets/*", "tauri.svg", "vite.svg", "injected.js"],
       "matches": ["https://colab.research.google.com/*"]
     }
-  ]
+  ],
+  "commands": {
+    "copy-notebook-full": {
+      "suggested_key": {
+        "default": "Alt+Shift+C",
+        "mac": "Alt+Shift+C"
+      },
+      "description": "Quick Copy entire notebook to clipboard"
+    }
+  }
 }

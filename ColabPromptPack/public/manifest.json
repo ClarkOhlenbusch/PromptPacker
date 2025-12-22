@@ -11,7 +11,9 @@
   },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://colab.research.google.com/*"

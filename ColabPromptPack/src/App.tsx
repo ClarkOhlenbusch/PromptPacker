@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getFileSystem, FileEntry } from "./services/FileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, Settings, Keyboard } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
@@ -27,15 +27,33 @@ export default function App() {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [currentShortcut, setCurrentShortcut] = useState<{modifiers: string[], key: string} | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
   // Close Overlay Logic
   const handleCloseOverlay = () => {
     // Send message to parent window (content script)
     window.parent.postMessage({ type: 'CLOSE_PROMPTPACK' }, '*');
   };
 
-  // Auto-scan on mount
+  // Auto-scan on mount & Load Settings
   useEffect(() => {
     handleOpenFolder();
+    
+    // Load shortcut
+    // We are in an IFrame, so we can't access chrome.storage directly easily if we are sandboxed? 
+    // Wait, extension pages have access to chrome API.
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get(['quickCopyShortcut'], (result) => {
+            if (result.quickCopyShortcut) {
+                setCurrentShortcut(result.quickCopyShortcut);
+            } else {
+                setCurrentShortcut({ modifiers: ["Alt", "Shift"], key: "C" });
+            }
+        });
+    }
   }, []);
 
   async function handleOpenFolder() {
@@ -157,6 +175,30 @@ export default function App() {
       setGenerating(false);
     }
   }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isRecording) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const modifiers = [];
+    if (e.ctrlKey) modifiers.push("Ctrl");
+    if (e.altKey) modifiers.push("Alt");
+    if (e.shiftKey) modifiers.push("Shift");
+    if (e.metaKey) modifiers.push("Meta");
+
+    // Ignore modifier-only presses
+    if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+
+    const newShortcut = { modifiers, key: e.key.toUpperCase() };
+    setCurrentShortcut(newShortcut);
+    setIsRecording(false);
+    
+    // Save
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.set({ quickCopyShortcut: newShortcut });
+    }
+  };
 
   const copyToClipboard = async () => {
       if (!generatedPrompt) return;
@@ -390,7 +432,15 @@ export default function App() {
            </div>
 
            {/* Action Footer */}
-           <div className="p-6 border-t border-packer-border bg-white flex justify-end gap-4 z-10">
+           <div className="p-6 border-t border-packer-border bg-white flex justify-between items-center gap-4 z-10">
+              <button 
+                  onClick={() => setShowSettings(true)}
+                  className="p-3 text-packer-text-muted hover:bg-slate-50 hover:text-packer-grey rounded-md transition-colors border border-transparent hover:border-packer-border"
+                  title="Settings"
+              >
+                 <Settings size={20} />
+              </button>
+
               <button 
                   onClick={handleGenerate}
                   disabled={generating || selectedPaths.size === 0}
@@ -403,6 +453,60 @@ export default function App() {
         </div>
       </div>
       
+      {/* Settings Modal */}
+      {showSettings && (
+          <div className="fixed inset-0 z-50 bg-packer-grey/20 flex items-center justify-center p-12 backdrop-blur-sm animate-in fade-in duration-200">
+             <div className="bg-white w-[500px] rounded-lg shadow-2xl flex flex-col border border-packer-border overflow-hidden">
+                <div className="flex justify-between items-center p-6 border-b border-packer-border bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-slate-50 p-2 rounded text-packer-grey">
+                           <Settings size={24}/>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-lg text-packer-grey">Settings</h3>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowSettings(false)} className="hover:bg-slate-100 text-packer-text-muted hover:text-packer-grey p-2 rounded-full transition"><X size={24}/></button>
+                </div>
+                
+                <div className="p-8 space-y-6">
+                    <div className="space-y-2">
+                        <label className="text-sm font-bold text-packer-grey flex items-center gap-2">
+                           <Keyboard size={16} /> Quick Copy Shortcut
+                        </label>
+                        <p className="text-xs text-packer-text-muted">
+                           Global hotkey to copy the entire notebook without opening the extension.
+                        </p>
+                        
+                        <div 
+                          className={`mt-2 p-4 border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all ${isRecording ? 'border-packer-blue bg-blue-50 text-packer-blue' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}
+                          onClick={() => setIsRecording(true)}
+                          onKeyDown={handleKeyDown}
+                          tabIndex={0} // Make focusable
+                        >
+                           {isRecording ? (
+                               <span className="font-mono font-bold animate-pulse">Press keys...</span>
+                           ) : (
+                               <div className="flex gap-2">
+                                  {currentShortcut?.modifiers.map(m => (
+                                      <kbd key={m} className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm">{m}</kbd>
+                                  ))}
+                                  <kbd className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm">{currentShortcut?.key}</kbd>
+                               </div>
+                           )}
+                        </div>
+                        {isRecording && <p className="text-xs text-center text-packer-blue mt-1">Focus box and press key combo</p>}
+                        {!isRecording && <p className="text-[10px] text-center text-packer-text-muted mt-1">Click to record new shortcut</p>}
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-packer-border bg-white flex justify-end">
+                    <button onClick={() => setShowSettings(false)} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded font-bold transition">Done</button>
+                </div>
+             </div>
+          </div>
+      )}
+
       {/* Output Modal */}
       {showOutput && (
           <div className="fixed inset-0 z-50 bg-packer-grey/20 flex items-center justify-center p-12 backdrop-blur-sm animate-in fade-in duration-200">

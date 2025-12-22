@@ -1,23 +1,153 @@
 // Content script for PromptPack Colab
-console.log("PromptPack Colab: Content script loaded");
+if (window.hasRunPromptPack) {
+  console.log("PromptPack: Content script already loaded. Skipping re-initialization.");
+  // If we are being re-injected or pinged, we still need to listen to the new runtime connection?
+  // No, the window listener persists, but runtime.onMessage might need care if the background worker changed.
+  // Actually, runtime.onMessage is bound to the context. If we return, the old listeners stay active.
+  // But if we were manually injected by background.js, the previous instance might be dead (orphaned) OR this is a fresh injection on a page that didn't have it.
+  // If this variable is on 'window', it persists.
+} else {
+  window.hasRunPromptPack = true;
+  console.log("PromptPack Colab: Content script loaded");
 
-let overlayContainer = null;
+  let overlayContainer = null;
 let cachedCells = [];
 let pendingQuickCopy = false;
 
 // 1. Inject the Page Script
+
 const script = document.createElement('script');
+
 script.src = chrome.runtime.getURL('injected.js');
+
 script.onload = function() {
+
     this.remove(); // Clean up script tag
+
 };
+
 (document.head || document.documentElement).appendChild(script);
 
-// 2. Listen for Data from Page Script
+
+
+// Hotkey State
+
+let quickCopyShortcut = {
+
+  modifiers: ["Alt", "Shift"],
+
+  key: "C" // Upper case for code comparison
+
+};
+
+
+
+// Load saved shortcut
+
+chrome.storage.local.get(['quickCopyShortcut'], (result) => {
+
+  if (result.quickCopyShortcut) {
+
+    quickCopyShortcut = result.quickCopyShortcut;
+
+  }
+
+});
+
+
+
+// Listen for updates
+
+chrome.storage.onChanged.addListener((changes) => {
+
+  if (changes.quickCopyShortcut) {
+
+    quickCopyShortcut = changes.quickCopyShortcut.newValue;
+
+  }
+
+});
+
+
+
+// Global Key Listener
+
+window.addEventListener("keydown", (e) => {
+
+  // Ignore if user is typing in an input
+
+  const tag = e.target.tagName.toLowerCase();
+
+  if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+
+
+
+  if (!quickCopyShortcut) return;
+
+
+
+  const pressedKey = e.key.toUpperCase();
+
+  const requiredKey = quickCopyShortcut.key.toUpperCase();
+
+
+
+  // Check Modifiers
+
+  const alt = quickCopyShortcut.modifiers.includes("Alt");
+
+  const shift = quickCopyShortcut.modifiers.includes("Shift");
+
+  const ctrl = quickCopyShortcut.modifiers.includes("Ctrl") || quickCopyShortcut.modifiers.includes("Meta"); // Treat Meta (Cmd) as Ctrl for simplicity or separate?
+
+  // Let's match strict names: "Meta", "Control", "Alt", "Shift"
+
+
+
+  const modMeta = quickCopyShortcut.modifiers.includes("Meta") || quickCopyShortcut.modifiers.includes("Command");
+
+  const modCtrl = quickCopyShortcut.modifiers.includes("Control") || quickCopyShortcut.modifiers.includes("Ctrl");
+
+  
+
+  const matchesMeta = modMeta === e.metaKey;
+
+  const matchesCtrl = modCtrl === e.ctrlKey;
+
+  const matchesAlt = alt === e.altKey;
+
+  const matchesShift = shift === e.shiftKey;
+
+
+
+  if (matchesMeta && matchesCtrl && matchesAlt && matchesShift && pressedKey === requiredKey) {
+
+     e.preventDefault();
+
+     e.stopPropagation();
+
+     pendingQuickCopy = true;
+
+     window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+
+     showToast("Quick Copy Triggered...");
+
+  }
+
+});
+
+
+
+// 2. Listen for Data from Page Script & Overlay IFrame
 window.addEventListener("message", (event) => {
-  if (event.source !== window) return;
+  // We accept messages from:
+  // 1. The page itself (injected script) -> PROMPTPACK_RESPONSE_CELLS
+  // 2. The overlay IFrame (App.tsx) -> CLOSE_PROMPTPACK, COPY_TO_CLIPBOARD
   
   if (event.data.type === "PROMPTPACK_RESPONSE_CELLS") {
+    // Only accept cell data from the page itself to avoid spoofing
+    if (event.source !== window) return;
+
     const cells = event.data.cells;
     cachedCells = cells;
 
@@ -112,12 +242,34 @@ function formatSize(bytes) {
 
 async function copyTextToClipboard(text, showToastMsg = false) {
   try {
+    // Try Async API first (but don't log error yet if it fails)
     await navigator.clipboard.writeText(text);
-    console.log("PromptPack: Copied to clipboard");
+    console.log("PromptPack: Copied to clipboard (Async)");
     if (showToastMsg) showToast("Notebook Copied to Clipboard!");
   } catch (err) {
-    console.error("PromptPack: Failed to copy", err);
-    if (showToastMsg) showToast("Failed to Copy", true);
+    // Fallback: textarea hack (Older but more reliable for background tasks)
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+         console.log("PromptPack: Copied to clipboard (Fallback)");
+         if (showToastMsg) showToast("Notebook Copied to Clipboard!");
+      } else {
+         throw new Error("Fallback copy command returned false");
+      }
+    } catch (fallbackErr) {
+      console.error("PromptPack: All copy methods failed", fallbackErr);
+      if (showToastMsg) showToast("Failed to Copy: Focus Document & Try Again", true);
+    }
   }
 }
 
@@ -211,4 +363,4 @@ function closeOverlay() {
     overlayContainer.remove();
     overlayContainer = null;
   }
-}
+}}

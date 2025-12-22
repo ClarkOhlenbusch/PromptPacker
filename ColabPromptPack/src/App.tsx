@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getFileSystem, FileEntry } from "./services/FileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, Settings, Keyboard } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, Settings, Keyboard, Terminal } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
@@ -17,6 +17,7 @@ export default function App() {
   // Selection State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [tier1Paths, setTier1Paths] = useState<Set<string>>(new Set()); // Full content
+  const [includeOutputPaths, setIncludeOutputPaths] = useState<Set<string>>(new Set());
 
   // Inputs
   const [preamble, setPreamble] = useState("");
@@ -31,6 +32,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState<{modifiers: string[], key: string} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [quickCopyIncludesOutput, setQuickCopyIncludesOutput] = useState(false);
 
   // Close Overlay Logic
   const handleCloseOverlay = () => {
@@ -46,15 +48,28 @@ export default function App() {
     // We are in an IFrame, so we can't access chrome.storage directly easily if we are sandboxed? 
     // Wait, extension pages have access to chrome API.
     if (typeof chrome !== 'undefined' && chrome.storage) {
-        chrome.storage.local.get(['quickCopyShortcut'], (result) => {
+        chrome.storage.local.get(['quickCopyShortcut', 'quickCopyIncludesOutput'], (result) => {
             if (result.quickCopyShortcut) {
                 setCurrentShortcut(result.quickCopyShortcut);
             } else {
                 setCurrentShortcut({ modifiers: ["Alt", "Shift"], key: "C" });
             }
+            if (result.quickCopyIncludesOutput !== undefined) {
+                setQuickCopyIncludesOutput(result.quickCopyIncludesOutput);
+            }
         });
     }
   }, []);
+
+  const handleToggleQuickCopyOutput = () => {
+      const newValue = !quickCopyIncludesOutput;
+      setQuickCopyIncludesOutput(newValue);
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+          chrome.storage.local.set({ quickCopyIncludesOutput: newValue }, () => {
+            console.log("PromptPack UI: Saved quickCopyIncludesOutput =", newValue);
+          });
+      }
+  };
 
   async function handleOpenFolder() {
     try {
@@ -144,11 +159,34 @@ export default function App() {
     }
     setTier1Paths(newTier1);
   };
+
+  const toggleIncludeOutput = (path: string) => {
+    if (!selectedPaths.has(path)) return; 
+    const newSet = new Set(includeOutputPaths);
+    if (newSet.has(path)) newSet.delete(path);
+    else newSet.add(path);
+    setIncludeOutputPaths(newSet);
+  };
+
+  const handleGlobalOutputToggle = () => {
+    const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir);
+    if (selectedFiles.length === 0) return;
+
+    const allHaveOutput = selectedFiles.every(f => includeOutputPaths.has(f.path));
+    
+    const newSet = new Set(includeOutputPaths);
+    if (allHaveOutput) {
+        selectedFiles.forEach(f => newSet.delete(f.path));
+    } else {
+        selectedFiles.forEach(f => newSet.add(f.path));
+    }
+    setIncludeOutputPaths(newSet);
+  };
   
   const handleGenerate = async () => {
       setGenerating(true);
       try {
-          const prompt = await generatePrompt(files, selectedPaths, tier1Paths, preamble, goal);
+          const prompt = await generatePrompt(files, selectedPaths, tier1Paths, includeOutputPaths, preamble, goal);
           setGeneratedPrompt(prompt);
           setShowOutput(true);
       } catch (e) {
@@ -271,12 +309,13 @@ export default function App() {
         
         {/* Left Pane: File Explorer */}
         <div className="w-[320px] border-r border-packer-border flex flex-col bg-white">
-           <div className="h-12 px-4 flex items-center justify-between border-b border-packer-border bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                 <span className="text-xs font-bold text-packer-text-muted uppercase tracking-wider">Project Files</span>
+           <div className="h-12 px-3 flex items-center justify-between border-b border-packer-border bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                 <span className="text-xs font-bold text-packer-text-muted uppercase tracking-wider whitespace-nowrap">Files</span>
                  
                  {/* Select All Button */}
                  {files.length > 0 && (
+                   <div className="flex gap-1 ml-1">
                      <button 
                        onClick={handleSelectAll} 
                        className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
@@ -285,11 +324,24 @@ export default function App() {
                         <ListChecks size={12} strokeWidth={2.5} />
                         <span className="text-[10px] font-bold uppercase tracking-tight">All</span>
                      </button>
+                     
+                     <button 
+                       onClick={handleGlobalOutputToggle} 
+                       className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-all shadow-sm active:scale-95
+                         ${files.filter(f => selectedPaths.has(f.path) && !f.is_dir).every(f => includeOutputPaths.has(f.path)) && selectedPaths.size > 0
+                           ? 'bg-amber-100 border-amber-500 text-amber-700' 
+                           : 'bg-white border-slate-200 text-packer-text-muted hover:border-amber-300 hover:text-amber-600'}`}
+                       title="Toggle Output for All Selected Files"
+                     >
+                        <Terminal size={12} strokeWidth={2.5} />
+                        <span className="text-[10px] font-bold uppercase tracking-tight">Out</span>
+                     </button>
+                   </div>
                  )}
                  
                  <button 
                    onClick={handleOpenFolder} 
-                   className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95 ml-1"
+                   className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
                  >
                     <FolderOpen size={12} strokeWidth={2.5} />
                     <span className="text-[10px] font-bold uppercase tracking-tight">
@@ -331,9 +383,11 @@ export default function App() {
                      depth={entry.relative_path.split('/').length - 1}
                      selectedPaths={selectedPaths}
                      tier1Paths={tier1Paths}
+                     includeOutputPaths={includeOutputPaths}
                      onToggle={toggleSelection}
                      onSetFull={handleSetFull}
                      onToggleTier1={(e) => toggleTier1(e.path)}
+                     onToggleOutput={(e) => toggleIncludeOutput(e.path)}
                    />
                 ))}
               </div>
@@ -435,10 +489,11 @@ export default function App() {
            <div className="p-6 border-t border-packer-border bg-white flex justify-between items-center gap-4 z-10">
               <button 
                   onClick={() => setShowSettings(true)}
-                  className="p-3 text-packer-text-muted hover:bg-slate-50 hover:text-packer-grey rounded-md transition-colors border border-transparent hover:border-packer-border"
+                  className="px-4 py-2.5 flex items-center gap-2 text-packer-text-muted hover:bg-slate-50 hover:text-packer-grey rounded-md transition-colors border border-packer-border shadow-sm active:scale-95"
                   title="Settings"
               >
-                 <Settings size={20} />
+                 <Settings size={18} />
+                 <span className="text-xs font-bold uppercase tracking-wider">Settings</span>
               </button>
 
               <button 
@@ -497,6 +552,26 @@ export default function App() {
                         </div>
                         {isRecording && <p className="text-xs text-center text-packer-blue mt-1">Focus box and press key combo</p>}
                         {!isRecording && <p className="text-[10px] text-center text-packer-text-muted mt-1">Click to record new shortcut</p>}
+                    </div>
+
+                    <div className="space-y-2 pt-4 border-t border-slate-100">
+                        <div className="flex items-center justify-between">
+                           <div className="flex flex-col">
+                              <label className="text-sm font-bold text-packer-grey flex items-center gap-2">
+                                 <Terminal size={16} /> Include Outputs in Quick Copy
+                              </label>
+                              <p className="text-xs text-packer-text-muted">
+                                 Append cell outputs (logs, errors) to the hotkey prompt.
+                              </p>
+                           </div>
+                           <button 
+                             onClick={handleToggleQuickCopyOutput}
+                             className={`w-12 h-6 rounded-full relative transition-all duration-200 focus:outline-none shadow-inner
+                               ${quickCopyIncludesOutput ? 'bg-[#0069C3]' : 'bg-slate-300'}`}
+                           >
+                               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 shadow-md border border-slate-100 ${quickCopyIncludesOutput ? 'left-7' : 'left-1'}`} />
+                           </button>
+                        </div>
                     </div>
                 </div>
 

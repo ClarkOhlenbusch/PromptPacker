@@ -4,6 +4,7 @@ export async function generatePrompt(
   allEntries: FileEntry[],
   selectedPaths: Set<string>,
   tier1Paths: Set<string>,
+  includeOutputPaths: Set<string>,
   preamble: string,
   goal: string
 ): Promise<string> {
@@ -37,7 +38,17 @@ export async function generatePrompt(
         output += compressCode(content);
       }
       
-      output += "\n```\n\n";
+      output += "\n```\n";
+
+      // Append Cell Output if requested
+      if (includeOutputPaths.has(file.path) && file.output && file.output.trim().length > 0) {
+        output += "\n# Output:\n";
+        output += "```text\n";
+        output += file.output;
+        output += "\n```\n";
+      }
+      
+      output += "\n";
     } catch (err) {
       console.error(`Failed to read ${file.path}`, err);
       output += `##### File: ${file.relative_path} (ERROR) #####\nError reading file.\n\n`;

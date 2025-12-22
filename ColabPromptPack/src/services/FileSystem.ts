@@ -4,6 +4,7 @@ export interface FileEntry {
   is_dir: boolean;
   size: number;
   line_count?: number;
+  output?: string;
 }
 
 export interface IFileSystem {

@@ -1,4 +1,4 @@
-import { CheckCircle2, FileCode, FolderOpen } from "lucide-react";
+import { CheckCircle2, FileCode, FolderOpen, Terminal } from "lucide-react";
 import { MouseEvent } from "react";
 
 interface FileEntry {
@@ -13,14 +13,17 @@ interface FileTreeItemProps {
   depth: number;
   selectedPaths: Set<string>;
   tier1Paths: Set<string>;
+  includeOutputPaths: Set<string>;
   onToggle: (entry: FileEntry) => void;
   onSetFull: (entry: FileEntry) => void;
   onToggleTier1: (entry: FileEntry) => void;
+  onToggleOutput: (entry: FileEntry) => void;
 }
 
-export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle, onSetFull, onToggleTier1 }: FileTreeItemProps) => {
+export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, includeOutputPaths, onToggle, onSetFull, onToggleTier1, onToggleOutput }: FileTreeItemProps) => {
   const isSelected = selectedPaths.has(entry.path);
   const isTier1 = tier1Paths.has(entry.path);
+  const includeOutput = includeOutputPaths.has(entry.path);
 
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -37,6 +40,11 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
     e.stopPropagation();
     onToggleTier1(entry);
   };
+
+  const handleOutputClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    onToggleOutput(entry);
+  }
 
   return (
     <div 
@@ -67,16 +75,29 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
       </div>
       
       {!entry.is_dir && isSelected && (
-         <button 
-           onClick={handleBadgeClick}
-           className={`ml-2 text-[10px] px-2 py-0.5 rounded border-2 font-black tracking-wide uppercase transition-all shadow-sm
-             ${isTier1 
-               ? 'bg-[#0069C3] text-white border-[#0069C3]' 
-               : 'bg-white text-slate-900 border-slate-300 hover:border-slate-400'
-             }`}
-         >
-           {isTier1 ? "FULL" : "SUM"}
-         </button>
+         <div className="flex gap-1 ml-2">
+             <button 
+               onClick={handleOutputClick}
+               className={`w-6 h-6 rounded flex items-center justify-center border transition-all shadow-sm
+                 ${includeOutput 
+                   ? 'bg-amber-100 border-amber-500 text-amber-700' 
+                   : 'bg-white text-slate-300 border-slate-200 hover:border-slate-300 hover:text-slate-400'}`}
+                title="Include Cell Output"
+             >
+               <Terminal size={12} strokeWidth={includeOutput ? 2.5 : 2} />
+             </button>
+
+             <button 
+               onClick={handleBadgeClick}
+               className={`text-[10px] px-2 py-0.5 rounded border-2 font-black tracking-wide uppercase transition-all shadow-sm
+                 ${isTier1 
+                   ? 'bg-[#0069C3] text-white border-[#0069C3]' 
+                   : 'bg-white text-slate-900 border-slate-300 hover:border-slate-400'
+                 }`}
+             >
+               {isTier1 ? "FULL" : "SUM"}
+             </button>
+         </div>
       )}
     </div>
   );

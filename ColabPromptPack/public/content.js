@@ -1,31 +1,46 @@
 // Content script for PromptPack Colab
-if (window.hasRunPromptPack) {
-  console.log("PromptPack: Content script already loaded. Skipping re-initialization.");
-  // If we are being re-injected or pinged, we still need to listen to the new runtime connection?
-  // No, the window listener persists, but runtime.onMessage might need care if the background worker changed.
-  // Actually, runtime.onMessage is bound to the context. If we return, the old listeners stay active.
-  // But if we were manually injected by background.js, the previous instance might be dead (orphaned) OR this is a fresh injection on a page that didn't have it.
-  // If this variable is on 'window', it persists.
+
+// Check if extension context is still valid (handles extension updates/reloads)
+function isExtensionContextValid() {
+  try {
+    chrome.runtime.getURL('');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+if (window.hasRunPromptPack && isExtensionContextValid()) {
+  console.log("PromptPack: Content script already loaded and context valid. Skipping re-initialization.");
 } else {
+  if (window.hasRunPromptPack) {
+    console.log("PromptPack: Extension context was invalidated. Re-initializing...");
+  }
   window.hasRunPromptPack = true;
   console.log("PromptPack Colab: Content script loaded");
 
   let overlayContainer = null;
 let cachedCells = [];
 let pendingQuickCopy = false;
+let injectedScriptReady = false;
+let pendingCellRequests = [];
+
+// Helper to request cells, queuing if injected script isn't ready yet
+function requestCells() {
+  if (injectedScriptReady) {
+    window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+  } else {
+    console.log("PromptPack: Injected script not ready, queuing cell request");
+    pendingCellRequests.push(true);
+  }
+}
 
 // 1. Inject the Page Script
-
 const script = document.createElement('script');
-
 script.src = chrome.runtime.getURL('injected.js');
-
 script.onload = function() {
-
     this.remove(); // Clean up script tag
-
 };
-
 (document.head || document.documentElement).appendChild(script);
 
 
@@ -40,32 +55,39 @@ let quickCopyShortcut = {
 
 };
 
+let quickCopyIncludesOutput = false;
 
+// Load saved shortcut and settings
 
-// Load saved shortcut
-
-chrome.storage.local.get(['quickCopyShortcut'], (result) => {
+chrome.storage.local.get(['quickCopyShortcut', 'quickCopyIncludesOutput'], (result) => {
+  console.log("PromptPack: Loaded settings from storage", result);
 
   if (result.quickCopyShortcut) {
-
     quickCopyShortcut = result.quickCopyShortcut;
-
   }
 
+  if (result.quickCopyIncludesOutput !== undefined) {
+     quickCopyIncludesOutput = result.quickCopyIncludesOutput;
+     console.log("PromptPack: Initial quickCopyIncludesOutput =", quickCopyIncludesOutput);
+  }
 });
 
 
 
 // Listen for updates
 
-chrome.storage.onChanged.addListener((changes) => {
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  console.log("PromptPack: Storage changed", areaName, changes);
 
   if (changes.quickCopyShortcut) {
-
     quickCopyShortcut = changes.quickCopyShortcut.newValue;
-
+    console.log("PromptPack: Updated quickCopyShortcut", quickCopyShortcut);
   }
 
+  if (changes.quickCopyIncludesOutput) {
+     quickCopyIncludesOutput = changes.quickCopyIncludesOutput.newValue;
+     console.log("PromptPack: Updated quickCopyIncludesOutput to", quickCopyIncludesOutput);
+  }
 });
 
 
@@ -121,17 +143,11 @@ window.addEventListener("keydown", (e) => {
 
 
   if (matchesMeta && matchesCtrl && matchesAlt && matchesShift && pressedKey === requiredKey) {
-
      e.preventDefault();
-
      e.stopPropagation();
-
      pendingQuickCopy = true;
-
-     window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
-
+     requestCells();
      showToast("Quick Copy Triggered...");
-
   }
 
 });
@@ -141,10 +157,21 @@ window.addEventListener("keydown", (e) => {
 // 2. Listen for Data from Page Script & Overlay IFrame
 window.addEventListener("message", (event) => {
   // We accept messages from:
-  // 1. The page itself (injected script) -> PROMPTPACK_RESPONSE_CELLS
+  // 1. The page itself (injected script) -> PROMPTPACK_RESPONSE_CELLS, PROMPTPACK_INJECTED_READY
   // 2. The overlay IFrame (App.tsx) -> CLOSE_PROMPTPACK, COPY_TO_CLIPBOARD
-  
-  if (event.data.type === "PROMPTPACK_RESPONSE_CELLS") {
+
+  if (event.data.type === "PROMPTPACK_INJECTED_READY") {
+    if (event.source !== window) return;
+    console.log("PromptPack: Injected script is ready");
+    injectedScriptReady = true;
+
+    // Process any queued cell requests
+    if (pendingCellRequests.length > 0) {
+      console.log(`PromptPack: Processing ${pendingCellRequests.length} queued cell requests`);
+      pendingCellRequests = [];
+      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+    }
+  } else if (event.data.type === "PROMPTPACK_RESPONSE_CELLS") {
     // Only accept cell data from the page itself to avoid spoofing
     if (event.source !== window) return;
 
@@ -167,32 +194,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   try {
     if (request.type === "GET_CELLS") {
       // Ask page for data
-      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
-      
-      // Async wait for response logic is tricky here without Promises.
-      // For now, return cached if available, or just acknowledge.
-      // The App typically polls or waits, but in our architecture, 
-      // the App.tsx scans using FileSystem.ts which calls window.parent.postMessage...
-      // wait, the App is inside an IFrame. It communicates with content.js differently?
-      // Actually, ColabFileSystem.ts uses window.parent.postMessage to ask content.js?
-      // No, ColabFileSystem.ts mocks filesystem.
-      
+      requestCells();
+
       // If the UI is open, it might trigger a scan itself.
       if (cachedCells.length > 0) {
         sendResponse({ cells: cachedCells });
       } else {
         setTimeout(() => sendResponse({ cells: cachedCells }), 500);
-        return true; 
+        return true;
       }
 
     } else if (request.type === "TOGGLE_OVERLAY") {
       toggleOverlay();
-      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+      requestCells();
       sendResponse({ success: true });
 
     } else if (request.type === "TRIGGER_QUICK_COPY") {
       pendingQuickCopy = true;
-      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+      requestCells();
+      sendResponse({ success: true });
+    } else if (request.type === "PING") {
       sendResponse({ success: true });
     }
 
@@ -214,6 +235,7 @@ function handleQuickCopy(cells) {
 }
 
 function generatePromptString(cells) {
+  console.log("PromptPack: generatePromptString called, quickCopyIncludesOutput =", quickCopyIncludesOutput);
   let output = "### PROJECT STRUCTURE ###\n";
   
   // Simple flat list structure
@@ -228,7 +250,16 @@ function generatePromptString(cells) {
     output += `##### File: ${cell.relative_path} (FULL) #####\n`;
     output += "```python\n"; // Assume python for Colab primarily
     output += cell.content + "\n";
-    output += "```\n\n";
+    output += "```\n";
+
+    if (quickCopyIncludesOutput && cell.output && cell.output.trim().length > 0) {
+        output += "\n# Output:\n";
+        output += "```text\n";
+        output += cell.output;
+        output += "\n```\n";
+    }
+
+    output += "\n";
   });
 
   return output;

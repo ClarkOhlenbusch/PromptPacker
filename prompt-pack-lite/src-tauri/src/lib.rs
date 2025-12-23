@@ -3,6 +3,13 @@ use ignore::WalkBuilder;
 use std::path::Path;
 use std::fs::File;
 use std::io::{self, Read};
+use std::sync::Mutex;
+use tauri::{State, Emitter, Manager};
+use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
+
+struct WatcherState {
+    watcher: Mutex<Option<RecommendedWatcher>>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct FileEntry {
@@ -45,6 +52,40 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
 
     let walker = WalkBuilder::new(&path)
         .standard_filters(true)
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            let name_lower = name.to_lowercase();
+
+            // Directories to ignore
+            if name == "node_modules" || 
+               name == "target" || 
+               name == "dist" || 
+               name == "build" || 
+               name == "out" || 
+               name == ".git" || 
+               name == ".vscode" || 
+               name == ".idea" || 
+               name == "__pycache__" || 
+               name == ".DS_Store" {
+                return false;
+            }
+
+            // Extensions to ignore (Images, Fonts, Binaries)
+            let ignored_extensions = [
+                ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff",
+                ".woff", ".woff2", ".ttf", ".eot", 
+                ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
+                ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar"
+            ];
+
+            for ext in ignored_extensions {
+                if name_lower.ends_with(ext) {
+                    return false;
+                }
+            }
+
+            true
+        })
         .build();
 
     let mut entries = Vec::new();
@@ -84,17 +125,59 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
 }
 
 #[tauri::command]
+fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherState>) -> Result<(), String> {
+    let mut watcher_guard = state.watcher.lock().map_err(|_| "Failed to lock watcher state")?;
+    
+    // Stop existing watcher by dropping it (taking it out of the Option)
+    let _ = watcher_guard.take();
+    
+    let app_handle = app.clone();
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+        match res {
+           Ok(_) => {
+               // Emit simple event to trigger refresh
+               let _ = app_handle.emit("project-change", ());
+           }
+           Err(e) => eprintln!("watch error: {:?}", e),
+        }
+    }).map_err(|e| e.to_string())?;
+    
+    watcher.watch(Path::new(&path), RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    
+    *watcher_guard = Some(watcher);
+    
+    Ok(())
+}
+
+#[tauri::command]
 fn read_file_content(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+
 pub fn run() {
+
     tauri::Builder::default()
+
         .plugin(tauri_plugin_fs::init())
+
         .plugin(tauri_plugin_dialog::init())
+
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content])
+
+        .setup(|app| {
+
+            app.manage(WatcherState { watcher: Mutex::new(None) });
+
+            Ok(())
+
+        })
+
+        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project])
+
         .run(tauri::generate_context!())
+
         .expect("error while running tauri application");
+
 }

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
@@ -34,6 +35,29 @@ export default function App() {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Watch for file changes
+  useEffect(() => {
+    if (!projectPath) return;
+
+    // Start watching
+    invoke("watch_project", { path: projectPath }).catch(console.error);
+
+    let unlisten: Promise<() => void>;
+
+    const setupListener = async () => {
+      unlisten = listen("project-change", () => {
+        console.log("File change detected, refreshing...");
+        scanProject(projectPath);
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) unlisten.then(f => f());
+    };
+  }, [projectPath]);
+
   async function handleOpenFolder() {
     try {
       const selected = await open({
@@ -42,8 +66,16 @@ export default function App() {
       });
 
       if (selected && typeof selected === 'string') {
+        // Reset selection when opening a NEW project
+        if (selected !== projectPath) {
+            setSelectedPaths(new Set());
+            setTier1Paths(new Set());
+        }
         setProjectPath(selected);
-        scanProject(selected);
+        // scanProject will be called by useEffect? 
+        // No, useEffect depends on projectPath. 
+        // But scanning immediately is better for UX.
+        scanProject(selected); 
       }
     } catch (err) {
       console.error(err);
@@ -55,12 +87,25 @@ export default function App() {
     try {
       const entries = await invoke<FileEntry[]>("scan_project", { path });
       setFiles(entries);
-      // Auto-select README
-      const readme = entries.find(e => e.relative_path.toLowerCase() === 'readme.md');
-      if (readme) {
-        setSelectedPaths(prev => new Set(prev).add(readme.path));
-        setTier1Paths(prev => new Set(prev).add(readme.path));
-      }
+      
+      // Auto-select README only if nothing is selected (initial load)
+      // We need to access the CURRENT selectedPaths state.
+      // Since we are inside a closure, selectedPaths might be stale?
+      // We can use the functional update of setFiles to trigger side effects? No.
+      // We'll trust the component state for now. 
+      // Actually, if it's an auto-refresh, we don't want to re-select README.
+      
+      setSelectedPaths(prev => {
+          if (prev.size === 0) {
+              const readme = entries.find(e => e.relative_path.toLowerCase() === 'readme.md');
+              if (readme) {
+                   setTier1Paths(t => new Set(t).add(readme.path));
+                   return new Set(prev).add(readme.path);
+              }
+          }
+          return prev;
+      });
+
     } catch (e) {
       console.error("Scan failed", e);
     } finally {
@@ -114,6 +159,37 @@ export default function App() {
       newTier1.add(path);
     }
     setTier1Paths(newTier1);
+  };
+
+  const handleSelectAll = () => {
+    if (files.length === 0) return;
+
+    // Check current state to decide next state
+    // State 0: Not all selected -> Go to Select All (Sum)
+    // State 1: All selected (Sum) -> Go to Select All (Full)
+    // State 2: All selected (Full) -> Clear All
+
+    const allSelected = files.every(f => selectedPaths.has(f.path));
+    const allFull = files.every(f => tier1Paths.has(f.path) || f.is_dir);
+
+    if (!allSelected) {
+        // Select All (Sum)
+        const newSelected = new Set<string>();
+        files.forEach(f => newSelected.add(f.path));
+        setSelectedPaths(newSelected);
+        setTier1Paths(new Set()); // Reset full
+    } else if (!allFull) {
+        // Select All (Full)
+        const newTier1 = new Set<string>();
+        files.forEach(f => {
+            if (!f.is_dir) newTier1.add(f.path);
+        });
+        setTier1Paths(newTier1);
+    } else {
+        // Clear All
+        setSelectedPaths(new Set());
+        setTier1Paths(new Set());
+    }
   };
   
   const handleGenerate = async () => {
@@ -175,12 +251,36 @@ export default function App() {
         
         {/* Left Pane: File Explorer */}
         <div className="w-[320px] border-r border-packer-border flex flex-col bg-white">
-           <div className="h-12 px-4 flex items-center justify-between border-b border-packer-border bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                 <span className="text-xs font-bold text-packer-text-muted uppercase tracking-wider">Project Files</span>
+           <div className="h-12 px-3 flex items-center justify-between border-b border-packer-border bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                 <span className="text-xs font-bold text-packer-text-muted uppercase tracking-wider whitespace-nowrap">FILES</span>
+                 
+                 {/* Select All Button */}
+                 {files.length > 0 && (
+                     <div className="flex items-center ml-1 gap-1">
+                         <button 
+                           onClick={handleSelectAll} 
+                           className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                           title="Cycle: Select All (Sum) -> Select All (Full) -> Clear"
+                         >
+                            <ListChecks size={12} strokeWidth={2.5} />
+                            <span className="text-[10px] font-bold uppercase tracking-tight">All</span>
+                         </button>
+
+                         <button 
+                           onClick={() => projectPath && scanProject(projectPath)}
+                           disabled={loading}
+                           className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                           title="Refresh File List"
+                         >
+                            <RefreshCw size={12} strokeWidth={2.5} className={loading ? "animate-spin" : ""} />
+                         </button>
+                     </div>
+                 )}
+
                  <button 
                    onClick={handleOpenFolder} 
-                   className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                   className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
                  >
                     <FolderOpen size={12} strokeWidth={2.5} />
                     <span className="text-[10px] font-bold uppercase tracking-tight">

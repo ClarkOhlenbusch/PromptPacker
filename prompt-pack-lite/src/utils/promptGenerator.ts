@@ -8,6 +8,15 @@ interface FileEntry {
   line_count?: number;
 }
 
+// Result from Rust skeleton extraction
+interface SkeletonResult {
+  skeleton: string;
+  language: string | null;
+  original_lines: number;
+  skeleton_lines: number;
+  compression_ratio: number;
+}
+
 export async function generatePrompt(
   allEntries: FileEntry[],
   selectedPaths: Set<string>,
@@ -31,19 +40,33 @@ export async function generatePrompt(
 
   for (const file of selectedFiles) {
     try {
-      const content = await invoke<string>("read_file_content", { path: file.path });
       const isFull = tier1Paths.has(file.path);
-      
-      output += `##### File: ${file.relative_path} ${isFull ? '(FULL)' : '(SUMMARY)'} #####\n`;
       const ext = file.path.split('.').pop() || "";
+
+      output += `##### File: ${file.relative_path} ${isFull ? '(FULL)' : '(SKELETON)'} #####\n`;
       output += "```" + ext + "\n";
-      
+
       if (isFull) {
+        // Tier 1: Full content
+        const content = await invoke<string>("read_file_content", { path: file.path });
         output += content;
       } else {
-        output += compressCode(content);
+        // Tier 2: Use Rust AST-based skeleton extraction
+        try {
+          const result = await invoke<SkeletonResult>("skeletonize_file", { path: file.path });
+          output += result.skeleton;
+          // Add compression stats as a comment
+          if (result.language) {
+            output += `\n// [${result.language}: ${result.original_lines}→${result.skeleton_lines} lines, ${Math.round(result.compression_ratio * 100)}% reduced]`;
+          }
+        } catch (skeletonErr) {
+          // Fallback to reading full content if skeleton fails
+          console.warn(`Skeleton extraction failed for ${file.path}, using full content:`, skeletonErr);
+          const content = await invoke<string>("read_file_content", { path: file.path });
+          output += compressCode(content);
+        }
       }
-      
+
       output += "\n```\n\n";
     } catch (err) {
       console.error(`Failed to read ${file.path}`, err);

@@ -75,7 +75,7 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
                : 'bg-white text-slate-900 border-slate-300 hover:border-slate-400'
              }`}
          >
-           {isTier1 ? "FULL" : "SUM"}
+           {isTier1 ? "FULL" : "SKEL"}
          </button>
       )}
     </div>

@@ -1,6 +1,6 @@
 [package]
 name = "prompt-pack-lite"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -26,4 +26,15 @@ ignore = "0.4"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 notify = "8.2.0"
+
+# Tree-sitter for AST-based code skeletonization
+tree-sitter = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-css = "0.23"
+tree-sitter-html = "0.23"
 

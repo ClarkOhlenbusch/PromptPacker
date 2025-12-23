@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
 
+mod skeleton;
+
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
@@ -154,6 +156,56 @@ fn read_file_content(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
+/// Result of skeleton extraction, returned to frontend
+#[derive(Debug, Serialize, Deserialize)]
+struct SkeletonResult {
+    skeleton: String,
+    language: Option<String>,
+    original_lines: usize,
+    skeleton_lines: usize,
+    compression_ratio: f32,
+}
+
+/// Skeletonize a file using AST-based extraction
+/// Returns structural signatures (imports, types, function signatures) without implementation details
+#[tauri::command]
+fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
+    // Read the file content
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    // Extract file extension
+    let extension = Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    // Run skeletonization
+    let result = skeleton::skeletonize(&content, extension);
+
+    // Calculate compression ratio
+    let original_chars = content.len() as f32;
+    let skeleton_chars = result.skeleton.len() as f32;
+    let compression_ratio = if original_chars > 0.0 {
+        1.0 - (skeleton_chars / original_chars)
+    } else {
+        0.0
+    };
+
+    Ok(SkeletonResult {
+        skeleton: result.skeleton,
+        language: result.language.map(|l| format!("{:?}", l)),
+        original_lines: result.original_lines,
+        skeleton_lines: result.skeleton_lines,
+        compression_ratio,
+    })
+}
+
+/// Batch skeletonize multiple files at once for efficiency
+#[tauri::command]
+fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, String>> {
+    paths.into_iter().map(skeletonize_file).collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 
 pub fn run() {
@@ -174,7 +226,7 @@ pub fn run() {
 
         })
 
-        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project])
+        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project, skeletonize_file, skeletonize_files])
 
         .run(tauri::generate_context!())
 

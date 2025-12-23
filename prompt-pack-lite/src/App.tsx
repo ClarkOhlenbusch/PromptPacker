@@ -261,7 +261,7 @@ export default function App() {
                          <button 
                            onClick={handleSelectAll} 
                            className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
-                           title="Cycle: Select All (Sum) -> Select All (Full) -> Clear"
+                           title="Cycle: Select All (Skeleton) → Select All (Full) → Clear"
                          >
                             <ListChecks size={12} strokeWidth={2.5} />
                             <span className="text-[10px] font-bold uppercase tracking-tight">All</span>
@@ -401,7 +401,7 @@ export default function App() {
                             </span>
                             <span className="flex items-center gap-1.5 text-packer-text-muted">
                                <div className="w-2 h-2 rounded-full bg-gray-300"></div>
-                               {selectedPaths.size - tier1Paths.size} Sum
+                               {selectedPaths.size - tier1Paths.size} Skeleton
                             </span>
                          </div>
                       </div>
@@ -410,9 +410,10 @@ export default function App() {
                          <span className="text-[11px] font-bold text-packer-text-muted uppercase">Estimated Tokens</span>
                          <span className="text-2xl font-bold text-packer-blue font-mono">
                            ~{Math.round(
-                             files.filter(f => tier1Paths.has(f.path)).reduce((acc, f) => acc + (f.size / 4), 0) + 
-                             files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).reduce((acc, f) => acc + ((f.size / 4) * 0.2), 0) +
-                             (files.length * 2) 
+                             files.filter(f => tier1Paths.has(f.path)).reduce((acc, f) => acc + (f.size / 4), 0) +
+                             // Skeleton files: ~70% compression on average (0.3x tokens)
+                             files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).reduce((acc, f) => acc + ((f.size / 4) * 0.3), 0) +
+                             (files.length * 2)
                            ).toLocaleString()}
                          </span> 
                       </div>

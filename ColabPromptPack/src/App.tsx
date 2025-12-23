@@ -460,7 +460,7 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
 
         {/* Left Pane: File Explorer */}
-        <div style={{ width: leftPanelWidth }} className="flex-shrink-0 flex flex-col bg-white">
+        <div style={{ width: leftPanelWidth }} className="flex-shrink-0 flex flex-col bg-white border-r border-packer-border">
            {/* Header - flexible height with wrapping */}
            <div className="px-3 py-2 flex flex-col gap-2 border-b border-packer-border bg-slate-50/50">
               {/* Top row: Title and count */}

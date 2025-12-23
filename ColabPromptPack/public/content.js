@@ -19,19 +19,53 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
   window.hasRunPromptPack = true;
   console.log("PromptPack Colab: Content script loaded");
 
+  // Security: Define allowed origins for postMessage communication
+  const COLAB_ORIGIN = "https://colab.research.google.com";
+  const EXTENSION_ORIGIN_PREFIX = "chrome-extension://";
+
   let overlayContainer = null;
+  let overlayIframe = null; // Store reference to iframe for origin validation
 let cachedCells = [];
+let cachedDiffs = [];
 let pendingQuickCopy = false;
 let injectedScriptReady = false;
 let pendingCellRequests = [];
+let pendingGetCellsCallbacks = []; // Queue for GET_CELLS response callbacks
+let pendingGetDiffsCallbacks = []; // Queue for GET_DIFFS response callbacks
+let pendingSnapshotCallbacks = []; // Queue for TAKE_SNAPSHOT response callbacks
 
 // Helper to request cells, queuing if injected script isn't ready yet
 function requestCells() {
   if (injectedScriptReady) {
-    window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+    window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, COLAB_ORIGIN);
   } else {
     console.log("PromptPack: Injected script not ready, queuing cell request");
     pendingCellRequests.push(true);
+  }
+}
+
+// Helper to request diffs
+function requestDiffs() {
+  if (injectedScriptReady) {
+    window.postMessage({ type: "PROMPTPACK_REQUEST_DIFFS" }, COLAB_ORIGIN);
+  } else {
+    console.log("PromptPack: Injected script not ready for diffs");
+  }
+}
+
+// Helper to take a snapshot (mark current state as baseline)
+function requestSnapshot() {
+  if (injectedScriptReady) {
+    window.postMessage({ type: "PROMPTPACK_TAKE_SNAPSHOT" }, COLAB_ORIGIN);
+  } else {
+    console.log("PromptPack: Injected script not ready for snapshot");
+  }
+}
+
+// Helper to clear history
+function requestClearHistory(cellPath = null) {
+  if (injectedScriptReady) {
+    window.postMessage({ type: "PROMPTPACK_CLEAR_HISTORY", cellPath: cellPath }, COLAB_ORIGIN);
   }
 }
 
@@ -161,7 +195,8 @@ window.addEventListener("message", (event) => {
   // 2. The overlay IFrame (App.tsx) -> CLOSE_PROMPTPACK, COPY_TO_CLIPBOARD
 
   if (event.data.type === "PROMPTPACK_INJECTED_READY") {
-    if (event.source !== window) return;
+    // Security: Only accept from the same window and origin (injected script)
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
     console.log("PromptPack: Injected script is ready");
     injectedScriptReady = true;
 
@@ -169,22 +204,88 @@ window.addEventListener("message", (event) => {
     if (pendingCellRequests.length > 0) {
       console.log(`PromptPack: Processing ${pendingCellRequests.length} queued cell requests`);
       pendingCellRequests = [];
-      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, "*");
+      window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, COLAB_ORIGIN);
     }
   } else if (event.data.type === "PROMPTPACK_RESPONSE_CELLS") {
-    // Only accept cell data from the page itself to avoid spoofing
-    if (event.source !== window) return;
+    // Security: Only accept cell data from the same window and origin (injected script)
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
 
-    const cells = event.data.cells;
+    const cells = event.data.cells || [];
     cachedCells = cells;
+
+    // Resolve all pending GET_CELLS callbacks
+    while (pendingGetCellsCallbacks.length > 0) {
+      const callback = pendingGetCellsCallbacks.shift();
+      try {
+        callback({ cells: cells });
+      } catch (e) {
+        console.warn("PromptPack: Error in GET_CELLS callback", e);
+      }
+    }
 
     if (pendingQuickCopy) {
       handleQuickCopy(cells);
       pendingQuickCopy = false;
     }
+  } else if (event.data.type === "PROMPTPACK_RESPONSE_DIFFS") {
+    // Security: Only accept diff data from the same window and origin (injected script)
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+
+    const diffs = event.data.diffs || [];
+    cachedDiffs = diffs;
+
+    // Resolve all pending GET_DIFFS callbacks
+    while (pendingGetDiffsCallbacks.length > 0) {
+      const callback = pendingGetDiffsCallbacks.shift();
+      try {
+        callback({ diffs: diffs });
+      } catch (e) {
+        console.warn("PromptPack: Error in GET_DIFFS callback", e);
+      }
+    }
+  } else if (event.data.type === "PROMPTPACK_SNAPSHOT_TAKEN") {
+    // Security: Only accept from the same window and origin (injected script)
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+
+    const count = event.data.cellCount || 0;
+    showToast(`Snapshot taken: ${count} cells`);
+
+    // Resolve all pending snapshot callbacks
+    while (pendingSnapshotCallbacks.length > 0) {
+      const callback = pendingSnapshotCallbacks.shift();
+      try {
+        callback({ success: true, cellCount: count });
+      } catch (e) {
+        console.warn("PromptPack: Error in snapshot callback", e);
+      }
+    }
+  } else if (event.data.type === "PROMPTPACK_HISTORY_CLEARED") {
+    // Security: Only accept from the same window and origin (injected script)
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+    showToast("History cleared");
   } else if (event.data.type === 'CLOSE_PROMPTPACK') {
+    // Security: Only accept from our extension iframe
+    if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) {
+      console.warn("PromptPack: Rejected CLOSE_PROMPTPACK from unauthorized origin:", event.origin);
+      return;
+    }
+    // Verify it's from our iframe
+    if (overlayIframe && event.source !== overlayIframe.contentWindow) {
+      console.warn("PromptPack: Rejected CLOSE_PROMPTPACK from unknown source");
+      return;
+    }
     closeOverlay();
   } else if (event.data.type === 'COPY_TO_CLIPBOARD') {
+    // Security: Only accept from our extension iframe
+    if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) {
+      console.warn("PromptPack: Rejected COPY_TO_CLIPBOARD from unauthorized origin:", event.origin);
+      return;
+    }
+    // Verify it's from our iframe
+    if (overlayIframe && event.source !== overlayIframe.contentWindow) {
+      console.warn("PromptPack: Rejected COPY_TO_CLIPBOARD from unknown source");
+      return;
+    }
     copyTextToClipboard(event.data.text);
   }
 });
@@ -193,16 +294,41 @@ window.addEventListener("message", (event) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   try {
     if (request.type === "GET_CELLS") {
-      // Ask page for data
-      requestCells();
-
-      // If the UI is open, it might trigger a scan itself.
+      // If we have fresh cached cells, return immediately
       if (cachedCells.length > 0) {
         sendResponse({ cells: cachedCells });
-      } else {
-        setTimeout(() => sendResponse({ cells: cachedCells }), 500);
-        return true;
+        return false;
       }
+
+      // Track if this callback has been resolved
+      let resolved = false;
+      const wrappedCallback = (response) => {
+        if (!resolved) {
+          resolved = true;
+          sendResponse(response);
+        }
+      };
+
+      // Queue the callback to be resolved when cells are received
+      pendingGetCellsCallbacks.push(wrappedCallback);
+
+      // Request cells from the injected script
+      requestCells();
+
+      // Safety timeout: if no response after 5 seconds, return empty array with error
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.warn("PromptPack: Timeout waiting for cells from injected script");
+          // Remove from pending queue
+          const idx = pendingGetCellsCallbacks.indexOf(wrappedCallback);
+          if (idx > -1) pendingGetCellsCallbacks.splice(idx, 1);
+          sendResponse({ cells: [], error: "Timeout waiting for notebook cells" });
+        }
+      }, 5000);
+
+      // Return true to indicate we'll respond asynchronously
+      return true;
 
     } else if (request.type === "TOGGLE_OVERLAY") {
       toggleOverlay();
@@ -214,6 +340,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       requestCells();
       sendResponse({ success: true });
     } else if (request.type === "PING") {
+      sendResponse({ success: true });
+    } else if (request.type === "GET_DIFFS") {
+      // Track if this callback has been resolved
+      let resolved = false;
+      const wrappedCallback = (response) => {
+        if (!resolved) {
+          resolved = true;
+          sendResponse(response);
+        }
+      };
+
+      // Queue the callback
+      pendingGetDiffsCallbacks.push(wrappedCallback);
+
+      // Request diffs from the injected script
+      requestDiffs();
+
+      // Safety timeout
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const idx = pendingGetDiffsCallbacks.indexOf(wrappedCallback);
+          if (idx > -1) pendingGetDiffsCallbacks.splice(idx, 1);
+          sendResponse({ diffs: [], error: "Timeout waiting for diffs" });
+        }
+      }, 5000);
+
+      return true;
+
+    } else if (request.type === "TAKE_SNAPSHOT") {
+      let resolved = false;
+      const wrappedCallback = (response) => {
+        if (!resolved) {
+          resolved = true;
+          sendResponse(response);
+        }
+      };
+
+      pendingSnapshotCallbacks.push(wrappedCallback);
+      requestSnapshot();
+
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const idx = pendingSnapshotCallbacks.indexOf(wrappedCallback);
+          if (idx > -1) pendingSnapshotCallbacks.splice(idx, 1);
+          sendResponse({ success: false, error: "Timeout taking snapshot" });
+        }
+      }, 5000);
+
+      return true;
+
+    } else if (request.type === "CLEAR_HISTORY") {
+      requestClearHistory(request.cellPath);
       sendResponse({ success: true });
     }
 
@@ -350,7 +530,7 @@ function toggleOverlay() {
 }
 
 function openOverlay() {
-  if (overlayContainer) return; 
+  if (overlayContainer) return;
 
   overlayContainer = document.createElement('div');
   overlayContainer.id = "promptpack-overlay-container";
@@ -372,9 +552,10 @@ function openOverlay() {
     if (e.target === overlayContainer) closeOverlay();
   };
 
-  const iframe = document.createElement('iframe');
-  iframe.src = chrome.runtime.getURL("index.html");
-  Object.assign(iframe.style, {
+  // Store iframe reference for security validation
+  overlayIframe = document.createElement('iframe');
+  overlayIframe.src = chrome.runtime.getURL("index.html");
+  Object.assign(overlayIframe.style, {
     width: '90%',
     maxWidth: '1200px',
     height: '85%',
@@ -385,7 +566,7 @@ function openOverlay() {
     backgroundColor: 'white'
   });
 
-  overlayContainer.appendChild(iframe);
+  overlayContainer.appendChild(overlayIframe);
   document.body.appendChild(overlayContainer);
 }
 
@@ -393,5 +574,6 @@ function closeOverlay() {
   if (overlayContainer) {
     overlayContainer.remove();
     overlayContainer = null;
+    overlayIframe = null;
   }
 }}

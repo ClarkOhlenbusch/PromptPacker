@@ -28,19 +28,35 @@ async function scanManifests(rootFiles: FileEntry[]): Promise<string | null> {
   if (pkgJson) {
     try {
       const content = await fs.readFileContent(pkgJson.path);
-      const pkg = JSON.parse(content);
-      output += `Project: ${pkg.name || 'Untitled'}\n`;
-      if (pkg.description) output += `Description: ${pkg.description}\n`;
-      
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      const importantDeps = Object.keys(deps).filter(k => 
-        ['react', 'vue', 'svelte', 'next', 'nuxt', 'tailwindcss', 'typescript', 'vite', 'tauri', 'electron', 'express', 'fastify', 'nestjs'].some(i => k.includes(i))
-      ).slice(0, 10); // Limit to top matches
-      
-      if (importantDeps.length > 0) {
-        output += `Key Stack (Node): ${importantDeps.join(', ')}\n`;
+
+      // Validate content before parsing
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        console.warn("package.json content is empty or invalid");
+      } else {
+        const pkg = JSON.parse(content);
+
+        // Validate parsed object
+        if (pkg && typeof pkg === 'object') {
+          output += `Project: ${pkg.name || 'Untitled'}\n`;
+          if (pkg.description) output += `Description: ${pkg.description}\n`;
+
+          // Safely merge dependencies with null checks
+          const deps = {
+            ...(pkg.dependencies || {}),
+            ...(pkg.devDependencies || {})
+          };
+          const importantDeps = Object.keys(deps).filter(k =>
+            ['react', 'vue', 'svelte', 'next', 'nuxt', 'tailwindcss', 'typescript', 'vite', 'tauri', 'electron', 'express', 'fastify', 'nestjs'].some(i => k.includes(i))
+          ).slice(0, 10); // Limit to top matches
+
+          if (importantDeps.length > 0) {
+            output += `Key Stack (Node): ${importantDeps.join(', ')}\n`;
+          }
+        }
       }
-    } catch (e) { console.error("Error parsing package.json", e); }
+    } catch (e) {
+      console.error("Error parsing package.json:", e instanceof Error ? e.message : e);
+    }
   }
 
   // Cargo.toml (Rust)
@@ -48,17 +64,29 @@ async function scanManifests(rootFiles: FileEntry[]): Promise<string | null> {
   if (cargoToml) {
     try {
       const content = await fs.readFileContent(cargoToml.path);
-      // Simple regex extraction to avoid TOML parser dependency
-      const name = content.match(/name\s*=\s*\"(.*?)\"/)?.[1];
-      const desc = content.match(/description\s*=\s*\"(.*?)\"/)?.[1];
-      
-      if (name && !output.includes(name)) output += `Project (Rust): ${name}\n`;
-      if (desc && !output.includes(desc)) output += `Description: ${desc}\n`;
-      
-      if (output && !output.includes("Key Stack (Node)")) {
-         output += `Stack Hint: Rust Project detected.\n`;
+
+      // Validate content before parsing
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        console.warn("Cargo.toml content is empty or invalid");
+      } else {
+        // Simple regex extraction to avoid TOML parser dependency
+        // Handles both double and single quotes, and multiline values
+        const nameMatch = content.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
+        const descMatch = content.match(/^\s*description\s*=\s*["']([^"']+)["']/m);
+
+        const name = nameMatch?.[1];
+        const desc = descMatch?.[1];
+
+        if (name && !output.includes(name)) output += `Project (Rust): ${name}\n`;
+        if (desc && !output.includes(desc)) output += `Description: ${desc}\n`;
+
+        if (output && !output.includes("Key Stack (Node)")) {
+          output += `Stack Hint: Rust Project detected.\n`;
+        }
       }
-    } catch (e) { console.error("Error reading Cargo.toml", e); }
+    } catch (e) {
+      console.error("Error reading Cargo.toml:", e instanceof Error ? e.message : e);
+    }
   }
 
   return output.trim() || null;

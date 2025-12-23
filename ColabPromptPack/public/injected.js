@@ -2,24 +2,207 @@
 (function() {
   console.log("PromptPack: Injected script running in page context.");
 
+  // Security: Define the expected origin for postMessage communication
+  const COLAB_ORIGIN = "https://colab.research.google.com";
+
+  // Cell history tracking for diff functionality
+  // Maps cell path -> array of { content, timestamp, output }
+  const cellHistory = new Map();
+  const MAX_HISTORY_PER_CELL = 10;
+
+  // Store a snapshot of current cells
+  function snapshotCells(cells) {
+    const timestamp = Date.now();
+    cells.forEach(cell => {
+      if (!cellHistory.has(cell.path)) {
+        cellHistory.set(cell.path, []);
+      }
+      const history = cellHistory.get(cell.path);
+      const lastEntry = history[history.length - 1];
+
+      // Only store if content changed
+      if (!lastEntry || lastEntry.content !== cell.content) {
+        history.push({
+          content: cell.content,
+          output: cell.output || "",
+          timestamp: timestamp
+        });
+
+        // Limit history size
+        if (history.length > MAX_HISTORY_PER_CELL) {
+          history.shift();
+        }
+      }
+    });
+  }
+
+  // Compute line-by-line diff between two strings
+  function computeDiff(oldContent, newContent) {
+    const oldLines = oldContent.split('\n');
+    const newLines = newContent.split('\n');
+
+    const diff = [];
+    const maxLen = Math.max(oldLines.length, newLines.length);
+
+    // Simple line-by-line comparison with context
+    let i = 0, j = 0;
+
+    while (i < oldLines.length || j < newLines.length) {
+      const oldLine = i < oldLines.length ? oldLines[i] : null;
+      const newLine = j < newLines.length ? newLines[j] : null;
+
+      if (oldLine === newLine) {
+        diff.push({ type: 'unchanged', line: oldLine, oldLineNum: i + 1, newLineNum: j + 1 });
+        i++;
+        j++;
+      } else if (oldLine !== null && !newLines.slice(j).includes(oldLine)) {
+        // Line was removed
+        diff.push({ type: 'removed', line: oldLine, oldLineNum: i + 1, newLineNum: null });
+        i++;
+      } else if (newLine !== null && !oldLines.slice(i).includes(newLine)) {
+        // Line was added
+        diff.push({ type: 'added', line: newLine, oldLineNum: null, newLineNum: j + 1 });
+        j++;
+      } else if (oldLine !== newLine) {
+        // Modified line - show both
+        diff.push({ type: 'removed', line: oldLine, oldLineNum: i + 1, newLineNum: null });
+        diff.push({ type: 'added', line: newLine, oldLineNum: null, newLineNum: j + 1 });
+        i++;
+        j++;
+      }
+    }
+
+    return diff;
+  }
+
+  // Get diff for a specific cell
+  function getCellDiff(cellPath) {
+    const history = cellHistory.get(cellPath);
+    if (!history || history.length < 2) {
+      return null; // No previous version to compare
+    }
+
+    const current = history[history.length - 1];
+    const previous = history[history.length - 2];
+
+    return {
+      previous: {
+        content: previous.content,
+        output: previous.output,
+        timestamp: previous.timestamp
+      },
+      current: {
+        content: current.content,
+        output: current.output,
+        timestamp: current.timestamp
+      },
+      diff: computeDiff(previous.content, current.content)
+    };
+  }
+
+  // Get all cells with changes
+  function getAllCellDiffs() {
+    const diffs = [];
+    cellHistory.forEach((history, path) => {
+      if (history.length >= 2) {
+        const current = history[history.length - 1];
+        const previous = history[history.length - 2];
+
+        // Only include if there are actual changes
+        if (previous.content !== current.content) {
+          diffs.push({
+            path: path,
+            relative_path: `Cell ${parseInt(path.replace('cell_', '')) + 1}`,
+            previous: {
+              content: previous.content,
+              output: previous.output,
+              timestamp: previous.timestamp
+            },
+            current: {
+              content: current.content,
+              output: current.output,
+              timestamp: current.timestamp
+            },
+            diff: computeDiff(previous.content, current.content)
+          });
+        }
+      }
+    });
+    return diffs;
+  }
+
+  // Clear history for a cell or all cells
+  function clearHistory(cellPath = null) {
+    if (cellPath) {
+      cellHistory.delete(cellPath);
+    } else {
+      cellHistory.clear();
+    }
+  }
+
+  // Take a manual snapshot (for "mark as baseline" functionality)
+  function takeSnapshot() {
+    const cells = extractCellsFromMemory();
+    snapshotCells(cells);
+    return cells.length;
+  }
+
   // Signal that injected script is ready
-  window.postMessage({ type: "PROMPTPACK_INJECTED_READY" }, "*");
+  window.postMessage({ type: "PROMPTPACK_INJECTED_READY" }, COLAB_ORIGIN);
 
   window.addEventListener("message", (event) => {
-    if (event.data.type !== "PROMPTPACK_REQUEST_CELLS") return;
+    // Security: Only accept messages from the expected origin
+    if (event.origin !== COLAB_ORIGIN) return;
 
-    try {
-      const cells = extractCellsFromMemory();
-      window.postMessage({ 
-        type: "PROMPTPACK_RESPONSE_CELLS", 
-        cells: cells 
-      }, "*");
-    } catch (e) {
-      console.error("PromptPack Extraction Error:", e);
-      window.postMessage({ 
-        type: "PROMPTPACK_RESPONSE_ERROR", 
-        error: e.message 
-      }, "*");
+    if (event.data.type === "PROMPTPACK_REQUEST_CELLS") {
+      try {
+        const cells = extractCellsFromMemory();
+        // Auto-snapshot cells on each fetch
+        snapshotCells(cells);
+        window.postMessage({
+          type: "PROMPTPACK_RESPONSE_CELLS",
+          cells: cells
+        }, COLAB_ORIGIN);
+      } catch (e) {
+        console.error("PromptPack Extraction Error:", e);
+        window.postMessage({
+          type: "PROMPTPACK_RESPONSE_ERROR",
+          error: e.message
+        }, COLAB_ORIGIN);
+      }
+    } else if (event.data.type === "PROMPTPACK_REQUEST_DIFFS") {
+      try {
+        const diffs = getAllCellDiffs();
+        window.postMessage({
+          type: "PROMPTPACK_RESPONSE_DIFFS",
+          diffs: diffs
+        }, COLAB_ORIGIN);
+      } catch (e) {
+        console.error("PromptPack Diff Error:", e);
+        window.postMessage({
+          type: "PROMPTPACK_RESPONSE_ERROR",
+          error: e.message
+        }, COLAB_ORIGIN);
+      }
+    } else if (event.data.type === "PROMPTPACK_TAKE_SNAPSHOT") {
+      try {
+        const count = takeSnapshot();
+        window.postMessage({
+          type: "PROMPTPACK_SNAPSHOT_TAKEN",
+          cellCount: count
+        }, COLAB_ORIGIN);
+      } catch (e) {
+        console.error("PromptPack Snapshot Error:", e);
+        window.postMessage({
+          type: "PROMPTPACK_RESPONSE_ERROR",
+          error: e.message
+        }, COLAB_ORIGIN);
+      }
+    } else if (event.data.type === "PROMPTPACK_CLEAR_HISTORY") {
+      clearHistory(event.data.cellPath);
+      window.postMessage({
+        type: "PROMPTPACK_HISTORY_CLEARED"
+      }, COLAB_ORIGIN);
     }
   });
 

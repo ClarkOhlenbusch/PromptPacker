@@ -34,7 +34,6 @@ jobs:
           name: PromptPack Lite ${{ env.VERSION }}
           tag_name: ${{ github.ref_name }}
           target_commitish: main
-          make_latest: true
           draft: false
           prerelease: false
           body: "Automated release from private repository."

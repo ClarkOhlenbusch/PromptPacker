@@ -10,20 +10,40 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [latestVersion, setLatestVersion] = useState(FALLBACK_VERSION);
   const [downloadUrl, setDownloadUrl] = useState("");
+  const [osName, setOsName] = useState("Mac"); // Default to Mac if detection fails
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
+
+    // 1. Detect OS
+    let detectedOS = "Mac";
+    const userAgent = window.navigator.userAgent;
+    if (userAgent.indexOf("Win") !== -1) detectedOS = "Windows";
+    else if (userAgent.indexOf("Linux") !== -1 && userAgent.indexOf("Android") === -1) detectedOS = "Linux";
+    setOsName(detectedOS);
     
-    // Fetch latest release from the public bridge repo
+    // 2. Fetch latest release from the public bridge repo
     fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`)
        .then(res => res.json())
        .then(data => {
           if (data.tag_name) {
              setLatestVersion(data.tag_name);
-             // Find the asset for Mac Arm64
-             // Prioritize DMG for Arm64, but could add logic for Intel/Windows later
-             const asset = data.assets?.find((a: any) => a.name.includes("aarch64") && a.name.endsWith(".dmg"));
+             
+             // 3. Find asset based on OS
+             let asset = null;
+             if (data.assets && data.assets.length > 0) {
+                if (detectedOS === "Windows") {
+                   asset = data.assets.find((a: any) => a.name.endsWith(".exe"));
+                } else if (detectedOS === "Linux") {
+                   asset = data.assets.find((a: any) => a.name.endsWith(".AppImage")); // Prefer AppImage
+                } else {
+                   // MacOS - Default to aarch64 (Apple Silicon) if available, or just the first .dmg
+                   asset = data.assets.find((a: any) => a.name.includes("aarch64") && a.name.endsWith(".dmg")) 
+                           || data.assets.find((a: any) => a.name.endsWith(".dmg"));
+                }
+             }
+
              if (asset) {
                 setDownloadUrl(asset.browser_download_url);
              }
@@ -34,7 +54,13 @@ export default function App() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const currentDownloadLink = downloadUrl || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_0.1.0_aarch64.dmg`; // Fallback structure
+  const getFallbackUrl = () => {
+      if (osName === "Windows") return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_x64-setup.exe`;
+      if (osName === "Linux") return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_amd64.AppImage`;
+      return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_aarch64.dmg`;
+  };
+
+  const currentDownloadLink = downloadUrl || getFallbackUrl();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white font-sans selection:bg-packer-blue selection:text-white">
@@ -84,12 +110,12 @@ export default function App() {
                className="px-12 py-4 bg-packer-grey hover:bg-slate-900 text-white rounded-xl font-bold text-lg shadow-2xl shadow-slate-900/20 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center gap-3 w-full sm:w-auto justify-center"
              >
                 <Monitor size={24} />
-                <span>Download for Mac</span>
+                <span>Download for {osName}</span>
              </a>
           </div>
           
           <p className="text-xs text-packer-text-muted pt-2 animate-fade-in delay-300">
-            Supports macOS (Apple Silicon & Intel).
+            Supports macOS, Windows, and Linux.
           </p>
         </div>
       </header>

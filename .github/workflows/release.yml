@@ -27,7 +27,7 @@ jobs:
 
       - name: Create Release
         id: create-release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           repository: clarkohlenbusch/prompt-pack-dist
@@ -90,7 +90,7 @@ jobs:
           npm run tauri build -- ${{ matrix.args }}
 
       - name: Upload Assets to Public Repo
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           repository: clarkohlenbusch/prompt-pack-dist

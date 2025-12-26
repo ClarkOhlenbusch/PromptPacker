@@ -30,7 +30,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
-          repository: clarkohlenbusch/prompt-pack-dist
+          repository: ClarkOhlenbusch/PromptPacker-Releases
           name: PromptPack Lite ${{ env.VERSION }}
           tag_name: ${{ github.ref_name }}
           target_commitish: main
@@ -94,7 +94,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
-          repository: clarkohlenbusch/prompt-pack-dist
+          repository: ClarkOhlenbusch/PromptPacker-Releases
           tag_name: ${{ github.ref_name }}
           target_commitish: main
           files: |

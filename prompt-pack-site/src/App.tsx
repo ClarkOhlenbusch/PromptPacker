@@ -3,8 +3,8 @@ import { Download, Terminal, FileCode, Zap, Monitor, CheckCircle2 } from "lucide
 
 // Fallback if API fails
 const FALLBACK_VERSION = "v0.1.0";
-const REPO_OWNER = "clarkohlenbusch";
-const REPO_NAME = "prompt-pack-dist"; // The public bridge repo
+const REPO_OWNER = "ClarkOhlenbusch";
+const REPO_NAME = "PromptPacker-Releases"; // The public bridge repo
 
 export default function App() {
   const [scrolled, setScrolled] = useState(false);

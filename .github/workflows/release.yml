@@ -32,6 +32,8 @@ jobs:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           repository: clarkohlenbusch/prompt-pack-dist
           name: PromptPack Lite ${{ env.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          make_latest: true
           draft: false
           prerelease: false
           generate_release_notes: true

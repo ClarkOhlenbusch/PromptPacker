@@ -36,7 +36,7 @@ jobs:
           make_latest: true
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body: "Automated release from private repository."
 
   build-tauri:
     needs: create-release

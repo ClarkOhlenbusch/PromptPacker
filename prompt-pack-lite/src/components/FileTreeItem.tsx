@@ -39,10 +39,10 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
   };
 
   return (
-    <div 
+    <div
       className={`group flex items-center py-2 px-3 cursor-pointer transition-colors border-l-4 select-none
-        ${isSelected 
-          ? 'bg-blue-100/60 border-[#0069C3]' 
+        ${isSelected
+          ? 'bg-blue-100/60 border-packer-blue'
           : 'border-transparent hover:bg-slate-50'
         }`}
       style={{ paddingLeft: `${depth * 1.5 + 0.75}rem` }}
@@ -50,33 +50,33 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
       onDoubleClick={handleDoubleClick}
     >
       <div className="flex-1 flex items-center gap-3 overflow-hidden">
-         {/* Custom Checkbox */}
-         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shadow-sm
-            ${isSelected ? 'bg-[#0069C3] border-[#0069C3]' : 'bg-white border-gray-300 group-hover:border-[#0069C3]'}`}>
-            {isSelected && <CheckCircle2 size={12} className="text-white" strokeWidth={3} />}
-         </div>
+        {/* Custom Checkbox */}
+        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shadow-sm
+            ${isSelected ? 'bg-packer-blue border-packer-blue' : 'bg-white border-gray-300 group-hover:border-packer-blue'}`}>
+          {isSelected && <CheckCircle2 size={12} className="text-white" strokeWidth={3} />}
+        </div>
 
-         {entry.is_dir ? 
-           <FolderOpen size={18} className={`${isSelected ? 'text-[#0069C3]' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2}/> : 
-           <FileCode size={18} className={`${isSelected ? 'text-[#0069C3]' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2}/>
-         }
-         
-         <span className={`text-sm truncate font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
-           {entry.relative_path.split('/').pop()}
-         </span>
+        {entry.is_dir ?
+          <FolderOpen size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} /> :
+          <FileCode size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} />
+        }
+
+        <span className={`text-sm truncate font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
+          {entry.relative_path.split('/').pop()}
+        </span>
       </div>
-      
+
       {!entry.is_dir && isSelected && (
-         <button 
-           onClick={handleBadgeClick}
-           className={`ml-2 text-[10px] px-2 py-0.5 rounded border-2 font-black tracking-wide uppercase transition-all shadow-sm
-             ${isTier1 
-               ? 'bg-[#0069C3] text-white border-[#0069C3]' 
-               : 'bg-white text-slate-900 border-slate-300 hover:border-slate-400'
-             }`}
-         >
-           {isTier1 ? "FULL" : "SKEL"}
-         </button>
+        <button
+          onClick={handleBadgeClick}
+          className={`ml-2 text-[10px] px-2 py-0.5 rounded border-2 font-black tracking-wide uppercase transition-all shadow-sm
+             ${isTier1
+              ? 'bg-packer-blue text-white border-packer-blue'
+              : 'bg-white text-slate-900 border-slate-300 hover:border-slate-400'
+            }`}
+        >
+          {isTier1 ? "FULL" : "SKEL"}
+        </button>
       )}
     </div>
   );

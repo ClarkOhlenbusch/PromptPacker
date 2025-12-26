@@ -1,13 +1,83 @@
 use serde::{Serialize, Deserialize};
 use ignore::WalkBuilder;
+use std::collections::HashSet;
 use std::path::Path;
 use std::fs::File;
 use std::io::{self, Read};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
 
 mod skeleton;
+
+#[cfg(test)]
+mod skeleton_tests;
+
+const IGNORED_DIR_NAMES: &[&str] = &[
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".git",
+    ".hg",
+    ".svn",
+    ".vscode",
+    ".idea",
+    ".cache",
+    ".parcel-cache",
+    ".turbo",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".astro",
+    ".vite",
+    ".vercel",
+    ".netlify",
+    ".expo",
+    ".gradle",
+    ".cxx",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nyc_output",
+    "__pycache__",
+    "__pypackages__",
+    "coverage",
+    "tmp",
+    "temp",
+    "logs",
+    "log",
+    "vendor",
+    "venv",
+    ".venv",
+    "bower_components",
+    "jspm_packages",
+    ".pnpm-store",
+    ".yarn",
+    "pods",
+    "deriveddata",
+];
+
+const IGNORED_FILE_NAMES: &[&str] = &[
+    ".ds_store",
+    "thumbs.db",
+    "desktop.ini",
+];
+
+const IGNORED_FILE_SUFFIXES: &[&str] = &[
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff", ".svg", ".psd", ".ai", ".heic", ".avif",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib", ".class", ".jar", ".war", ".ear", ".pdb", ".wasm", ".node",
+    ".pdf", ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".iso", ".dmg", ".pkg", ".deb", ".rpm",
+    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".mpg", ".mpeg",
+    ".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg",
+    ".csv", ".tsv", ".parquet", ".arrow", ".db", ".sqlite", ".sqlite3", ".duckdb", ".rdb", ".pkl", ".pickle",
+    ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".key", ".pages", ".numbers",
+    ".log", ".map", ".cache", ".min.js", ".min.css", ".bak", ".lock", ".icns",
+];
 
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
@@ -40,13 +110,49 @@ fn count_lines(path: &Path) -> Option<usize> {
     Some(count + 1)
 }
 
+fn is_ignored_dir(name_lower: &str, path: &Path) -> bool {
+    if IGNORED_DIR_NAMES.iter().any(|dir| dir == &name_lower) {
+        return true;
+    }
+    if name_lower == "icons" && path_has_component(path, "src-tauri") {
+        return true;
+    }
+    false
+}
+
+fn path_has_component(path: &Path, component: &str) -> bool {
+    path.components().any(|part| {
+        part.as_os_str()
+            .to_str()
+            .map(|s| s.eq_ignore_ascii_case(component))
+            .unwrap_or(false)
+    })
+}
+
+fn is_ignored_file(name_lower: &str) -> bool {
+    if IGNORED_FILE_NAMES.iter().any(|name| name == &name_lower) {
+        return true;
+    }
+    IGNORED_FILE_SUFFIXES.iter().any(|ext| name_lower.ends_with(ext))
+}
+
+fn should_emit(event: &Event) -> bool {
+    use notify::event::ModifyKind;
+
+    match event.kind {
+        notify::EventKind::Access(_) => false,
+        notify::EventKind::Modify(ModifyKind::Metadata(_)) => false,
+        _ => true,
+    }
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
 #[tauri::command]
-fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
+async fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
     let root_path = Path::new(&path);
     if !root_path.exists() {
         return Err("Path does not exist".to_string());
@@ -57,36 +163,17 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
         .filter_entry(|entry| {
             let name = entry.file_name().to_string_lossy();
             let name_lower = name.to_lowercase();
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
 
-            // Directories to ignore
-            if name == "node_modules" || 
-               name == "target" || 
-               name == "dist" || 
-               name == "build" || 
-               name == "out" || 
-               name == ".git" || 
-               name == ".vscode" || 
-               name == ".idea" || 
-               name == "__pycache__" || 
-               name == ".DS_Store" {
+            if is_dir {
+                return !is_ignored_dir(&name_lower, entry.path());
+            }
+
+            if is_ignored_file(&name_lower) {
                 return false;
             }
 
-            // Extensions to ignore (Images, Fonts, Binaries)
-            let ignored_extensions = [
-                ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff",
-                ".woff", ".woff2", ".ttf", ".eot", 
-                ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
-                ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar"
-            ];
-
-            for ext in ignored_extensions {
-                if name_lower.ends_with(ext) {
-                    return false;
-                }
-            }
-
-            true
+            !is_ignored_dir(&name_lower, entry.path())
         })
         .build();
 
@@ -120,6 +207,20 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
             Err(err) => eprintln!("Error walking path: {}", err),
         }
     }
+
+    let mut keep_dirs: HashSet<String> = HashSet::new();
+    for entry in entries.iter().filter(|e| !e.is_dir) {
+        let mut current = Path::new(&entry.path).parent();
+        while let Some(dir) = current {
+            if dir == root_path {
+                break;
+            }
+            keep_dirs.insert(dir.to_string_lossy().to_string());
+            current = dir.parent();
+        }
+    }
+
+    entries.retain(|entry| !entry.is_dir || keep_dirs.contains(&entry.path));
     
     entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
@@ -127,16 +228,31 @@ fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
 }
 
 #[tauri::command]
-fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherState>) -> Result<(), String> {
+async fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherState>) -> Result<(), String> {
     let mut watcher_guard = state.watcher.lock().map_err(|_| "Failed to lock watcher state")?;
     
     // Stop existing watcher by dropping it (taking it out of the Option)
     let _ = watcher_guard.take();
     
+    let debounce = Duration::from_millis(500);
+    let last_emit = Arc::new(Mutex::new(Instant::now()));
+    let last_emit_for_cb = last_emit.clone();
     let app_handle = app.clone();
     let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
         match res {
-           Ok(_) => {
+           Ok(event) => {
+               if !should_emit(&event) {
+                   return;
+               }
+
+               let mut last_emit = match last_emit_for_cb.lock() {
+                   Ok(guard) => guard,
+                   Err(poisoned) => poisoned.into_inner(),
+               };
+               if last_emit.elapsed() < debounce {
+                   return;
+               }
+               *last_emit = Instant::now();
                // Emit simple event to trigger refresh
                let _ = app_handle.emit("project-change", ());
            }
@@ -144,7 +260,24 @@ fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherSt
         }
     }).map_err(|e| e.to_string())?;
     
-    watcher.watch(Path::new(&path), RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    // Use ignore::WalkBuilder to find all valid directories to watch
+    // This avoids watching massive ignored directories like node_modules which causes freezes
+    let walker = WalkBuilder::new(&path)
+        .standard_filters(true)
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            let name_lower = name.to_lowercase();
+            !is_ignored_dir(&name_lower, entry.path())
+        })
+        .build();
+
+    for result in walker {
+        if let Ok(entry) = result {
+            if entry.path().is_dir() {
+                let _ = watcher.watch(entry.path(), RecursiveMode::NonRecursive);
+            }
+        }
+    }
     
     *watcher_guard = Some(watcher);
     
@@ -152,7 +285,7 @@ fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherSt
 }
 
 #[tauri::command]
-fn read_file_content(path: String) -> Result<String, String> {
+async fn read_file_content(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
@@ -169,9 +302,16 @@ struct SkeletonResult {
 /// Skeletonize a file using AST-based extraction
 /// Returns structural signatures (imports, types, function signatures) without implementation details
 #[tauri::command]
-fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
+async fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
+    use std::time::Instant;
+    
+    let start = Instant::now();
+    eprintln!("[SKELETON] Starting: {}", path);
+    
     // Read the file content
+    let read_start = Instant::now();
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    eprintln!("[SKELETON] Read {} bytes in {:?}", content.len(), read_start.elapsed());
 
     // Extract file extension
     let extension = Path::new(&path)
@@ -180,7 +320,9 @@ fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
         .unwrap_or("");
 
     // Run skeletonization
+    let skel_start = Instant::now();
     let result = skeleton::skeletonize(&content, extension);
+    eprintln!("[SKELETON] Skeletonized in {:?} (lang: {:?})", skel_start.elapsed(), result.language);
 
     // Calculate compression ratio
     let original_chars = content.len() as f32;
@@ -190,6 +332,8 @@ fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
     } else {
         0.0
     };
+
+    eprintln!("[SKELETON] Total time for {}: {:?}", path, start.elapsed());
 
     Ok(SkeletonResult {
         skeleton: result.skeleton,
@@ -202,8 +346,39 @@ fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
 
 /// Batch skeletonize multiple files at once for efficiency
 #[tauri::command]
-fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, String>> {
-    paths.into_iter().map(skeletonize_file).collect()
+async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, String>> {
+    paths.into_iter().map(|p| {
+        // Can't directly await in map, so we'll just execute synchronously inside the async wrapper
+        // or actually, since we are largely CPU bound, spawning threads might be better but
+        // simply making the command async offloads it from the main UI thread.
+        // Re-using the logic from skeletonize_file but synchronized is fine here
+        // as long as the outer command is async.
+        
+        // However, since we call skeletonize_file (which is now async) we can't call it directly easily.
+        // Let's just inline the synchronous logic or extraction.
+        let content = std::fs::read_to_string(&p).map_err(|e| e.to_string())?;
+         let extension = Path::new(&p)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let result = skeleton::skeletonize(&content, extension);
+        
+        let original_chars = content.len() as f32;
+        let skeleton_chars = result.skeleton.len() as f32;
+        let compression_ratio = if original_chars > 0.0 {
+            1.0 - (skeleton_chars / original_chars)
+        } else {
+            0.0
+        };
+        
+        Ok(SkeletonResult {
+            skeleton: result.skeleton,
+            language: result.language.map(|l| format!("{:?}", l)),
+            original_lines: result.original_lines,
+            skeleton_lines: result.skeleton_lines,
+            compression_ratio,
+        })
+    }).collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -33,6 +33,7 @@ jobs:
           repository: clarkohlenbusch/prompt-pack-dist
           name: PromptPack Lite ${{ env.VERSION }}
           tag_name: ${{ github.ref_name }}
+          target_commitish: main
           make_latest: true
           draft: false
           prerelease: false
@@ -94,7 +95,8 @@ jobs:
         with:
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           repository: clarkohlenbusch/prompt-pack-dist
-          tag_name: ${{ github.ref_name }} # We need to ensure we map to the right tag
+          tag_name: ${{ github.ref_name }}
+          target_commitish: main
           files: |
             prompt-pack-lite/src-tauri/target/${{ matrix.target_path }}/bundle/dmg/*.dmg
             prompt-pack-lite/src-tauri/target/${{ matrix.target_path }}/bundle/appimage/*.AppImage

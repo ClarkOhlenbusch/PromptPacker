@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
 import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks } from "lucide-react";
@@ -273,14 +274,45 @@ export default function App() {
     }
   }
 
+  const fallbackCopyText = (text: string) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let success = false;
+    try {
+      success = document.execCommand("copy");
+    } catch (err) {
+      success = false;
+    }
+    document.body.removeChild(textarea);
+    return success;
+  };
+
   const copyToClipboard = async () => {
     if (!generatedPrompt) return;
     try {
-      await navigator.clipboard.writeText(generatedPrompt);
+      await writeClipboardText(generatedPrompt);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
-      console.error("Copy failed", e);
+      try {
+        await navigator.clipboard.writeText(generatedPrompt);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (fallbackErr) {
+        if (fallbackCopyText(generatedPrompt)) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } else {
+          console.error("Copy failed", fallbackErr);
+        }
+      }
     }
   };
 
@@ -435,14 +467,14 @@ export default function App() {
                     <button
                       id="file-tree-toggle"
                       onClick={() => setIncludeFileTree(!includeFileTree)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-packer-blue focus:ring-offset-2 ${includeFileTree ? 'bg-packer-blue' : 'bg-gray-300'}`}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-packer-blue focus:ring-offset-2 ${includeFileTree ? 'bg-packer-blue shadow-inner shadow-blue-900/20' : 'bg-slate-200 shadow-inner shadow-black/5'}`}
                     >
                       <span className="sr-only">Toggle file tree</span>
                       <span
-                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${includeFileTree ? 'translate-x-4.5' : 'translate-x-1'}`}
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${includeFileTree ? 'translate-x-4.5' : 'translate-x-1'}`}
                       />
                     </button>
-                    <label className="text-xs font-bold text-packer-text-muted uppercase tracking-wide cursor-pointer select-none" htmlFor="file-tree-toggle">File Tree</label>
+                    <label className="text-xs font-bold text-packer-grey uppercase tracking-wide cursor-pointer select-none transition-colors" htmlFor="file-tree-toggle">File Tree</label>
                   </div>
                 </div>
 

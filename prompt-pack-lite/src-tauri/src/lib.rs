@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use ignore::WalkBuilder;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
@@ -10,6 +10,7 @@ use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
 
 mod skeleton;
+mod skeleton_legacy;
 
 #[cfg(test)]
 mod skeleton_tests;
@@ -146,19 +147,16 @@ fn should_emit(event: &Event) -> bool {
     }
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+fn normalize_relative_path(relative: &Path) -> String {
+    relative.to_string_lossy().replace('\\', "/")
 }
 
-#[tauri::command]
-async fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
-    let root_path = Path::new(&path);
-    if !root_path.exists() {
+fn scan_project_entries(path: &Path) -> Result<(Vec<FileEntry>, Vec<PathBuf>), String> {
+    if !path.exists() {
         return Err("Path does not exist".to_string());
     }
 
-    let walker = WalkBuilder::new(&path)
+    let walker = WalkBuilder::new(path)
         .standard_filters(true)
         .filter_entry(|entry| {
             let name = entry.file_name().to_string_lossy();
@@ -178,30 +176,36 @@ async fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
         .build();
 
     let mut entries = Vec::new();
+    let mut dirs_to_watch: Vec<PathBuf> = Vec::new();
 
     for result in walker {
         match result {
             Ok(entry) => {
                 let p = entry.path();
-                if p == root_path { continue; } 
-                
-                let relative_res = p.strip_prefix(&path);
-                if let Ok(relative) = relative_res {
-                     let is_dir = p.is_dir();
-                     let size = p.metadata().map(|m| m.len()).unwrap_or(0);
-                     let mut line_count = None;
-                     
-                     if !is_dir && size < 10 * 1024 * 1024 {
-                         line_count = count_lines(p);
-                     }
+                if p.is_dir() {
+                    dirs_to_watch.push(p.to_path_buf());
+                }
+                if p == path {
+                    continue;
+                }
 
-                     entries.push(FileEntry {
-                         path: p.to_string_lossy().to_string(),
-                         relative_path: relative.to_string_lossy().to_string(),
-                         is_dir,
-                         size,
-                         line_count,
-                     });
+                let relative_res = p.strip_prefix(path);
+                if let Ok(relative) = relative_res {
+                    let is_dir = p.is_dir();
+                    let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                    let mut line_count = None;
+
+                    if !is_dir && size < 10 * 1024 * 1024 {
+                        line_count = count_lines(p);
+                    }
+
+                    entries.push(FileEntry {
+                        path: p.to_string_lossy().to_string(),
+                        relative_path: normalize_relative_path(relative),
+                        is_dir,
+                        size,
+                        line_count,
+                    });
                 }
             }
             Err(err) => eprintln!("Error walking path: {}", err),
@@ -212,7 +216,7 @@ async fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
     for entry in entries.iter().filter(|e| !e.is_dir) {
         let mut current = Path::new(&entry.path).parent();
         while let Some(dir) = current {
-            if dir == root_path {
+            if dir == path {
                 break;
             }
             keep_dirs.insert(dir.to_string_lossy().to_string());
@@ -221,8 +225,28 @@ async fn scan_project(path: String) -> Result<Vec<FileEntry>, String> {
     }
 
     entries.retain(|entry| !entry.is_dir || keep_dirs.contains(&entry.path));
-    
     entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+    Ok((entries, dirs_to_watch))
+}
+
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+async fn scan_project(path: String, state: State<'_, WatcherState>) -> Result<Vec<FileEntry>, String> {
+    let root_path = Path::new(&path);
+    let (entries, dirs_to_watch) = scan_project_entries(root_path)?;
+
+    if let Ok(mut watcher_guard) = state.watcher.lock() {
+        if let Some(watcher) = watcher_guard.as_mut() {
+            for dir in dirs_to_watch {
+                let _ = watcher.watch(&dir, RecursiveMode::NonRecursive);
+            }
+        }
+    }
 
     Ok(entries)
 }
@@ -321,7 +345,7 @@ async fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
 
     // Run skeletonization
     let skel_start = Instant::now();
-    let result = skeleton::skeletonize(&content, extension);
+    let result = skeleton::skeletonize_with_path(&content, extension, Some(&path));
     eprintln!("[SKELETON] Skeletonized in {:?} (lang: {:?})", skel_start.elapsed(), result.language);
 
     // Calculate compression ratio
@@ -361,7 +385,7 @@ async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, Str
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        let result = skeleton::skeletonize(&content, extension);
+        let result = skeleton::skeletonize_with_path(&content, extension, Some(&p));
         
         let original_chars = content.len() as f32;
         let skeleton_chars = result.skeleton.len() as f32;
@@ -393,6 +417,8 @@ pub fn run() {
 
         .plugin(tauri_plugin_opener::init())
 
+        .plugin(tauri_plugin_clipboard_manager::init())
+
         .setup(|app| {
 
             app.manage(WatcherState { watcher: Mutex::new(None) });
@@ -407,4 +433,57 @@ pub fn run() {
 
         .expect("error while running tauri application");
 
+}
+
+#[cfg(test)]
+mod lib_tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(prefix: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            path.push(format!("{}_{}_{}", prefix, std::process::id(), now));
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn normalize_relative_path_replaces_backslashes() {
+        let path = Path::new("foo\\bar\\baz.txt");
+        assert_eq!(normalize_relative_path(path), "foo/bar/baz.txt");
+    }
+
+    #[test]
+    fn scan_project_entries_collects_dirs_and_paths() {
+        let temp = TestDir::new("prompt_pack_lite_scan");
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+
+        let (entries, dirs) = scan_project_entries(root).expect("scan project");
+
+        assert!(dirs.iter().any(|dir| dir == &root.join("src")));
+        assert!(entries.iter().any(|entry| entry.relative_path == "src/main.rs"));
+    }
 }

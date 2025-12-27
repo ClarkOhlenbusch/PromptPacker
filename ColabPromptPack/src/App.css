@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+@theme {
+    --color-packer-blue: #0069C3;
+    --color-packer-grey: #2A3947;
+    --color-packer-border: #E8EDF2;
+    --color-packer-text-muted: #5B6A78;
+    --color-packer-white: #FFFFFF;
+}

@@ -6,7 +6,6 @@ import {
    ShieldCheck,
    ChevronRight,
    Zap,
-   Box,
    Layers,
    CheckCircle2
 } from "lucide-react";

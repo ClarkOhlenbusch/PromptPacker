@@ -28,26 +28,39 @@ export async function generatePrompt(
   let output = "";
 
   if (preamble.trim()) {
-    output += "### PREAMBLE ###\n" + preamble + "\n\n";
+    output += "PREAMBLE\n" + preamble + "\n\n";
   }
 
   if (includeFileTree) {
-    output += "### PROJECT STRUCTURE ###\n";
+    output += "TREE\n";
     output += generateTreeStructure(allEntries);
     output += "\n\n";
   }
 
-  output += "### FILE CONTENTS ###\n\n";
+  const selectedEntries = allEntries.filter(e => selectedPaths.has(e.path));
+  const effectiveSelectedPaths = new Set(selectedPaths);
+  const needsTauriLib = selectedEntries.some(entry =>
+    entry.relative_path.startsWith("src-tauri/src/")
+  );
+  if (needsTauriLib) {
+    const libEntry = allEntries.find(
+      entry => !entry.is_dir && entry.relative_path === "src-tauri/src/lib.rs"
+    );
+    if (libEntry) {
+      effectiveSelectedPaths.add(libEntry.path);
+    }
+  }
+  const selectedFiles = allEntries.filter(
+    e => !e.is_dir && effectiveSelectedPaths.has(e.path)
+  );
 
-  const selectedFiles = allEntries.filter(e => !e.is_dir && selectedPaths.has(e.path));
+  const fallbackFiles: string[] = [];
 
   for (const file of selectedFiles) {
     try {
       const isFull = tier1Paths.has(file.path);
-      const ext = file.path.split('.').pop() || "";
 
-      output += `##### File: ${file.relative_path} ${isFull ? '(FULL)' : '(SKELETON)'} #####\n`;
-      output += "```" + ext + "\n";
+      output += `FILE ${file.relative_path} ${isFull ? "FULL" : "SKELETON"}\n`;
 
       if (isFull) {
         // Tier 1: Full content
@@ -65,20 +78,28 @@ export async function generatePrompt(
         } catch (skeletonErr) {
           // Fallback to reading full content if skeleton fails
           console.warn(`Skeleton extraction failed for ${file.path}, using full content:`, skeletonErr);
+          fallbackFiles.push(file.relative_path);
           const content = await invoke<string>("read_file_content", { path: file.path });
           output += compressCode(content);
         }
       }
 
-      output += "\n```\n\n";
+      output += "\nEND_FILE\n\n";
     } catch (err) {
       console.error(`Failed to read ${file.path}`, err);
-      output += `##### File: ${file.relative_path} (ERROR) #####\nError reading file.\n\n`;
+      output += `FILE ${file.relative_path} ERROR\nError reading file.\nEND_FILE\n\n`;
     }
   }
 
   if (goal.trim()) {
-    output += "### GOAL / QUERY ###\n" + goal + "\n";
+    output += "GOAL\n" + goal + "\n";
+  }
+
+  if (fallbackFiles.length > 0) {
+    output += "\n// ! FALLBACK WARNING: AST Skeletonization failed for the following files (naive compression used):\n";
+    fallbackFiles.forEach(f => {
+      output += `// ! - ${f}\n`;
+    });
   }
 
   return output;

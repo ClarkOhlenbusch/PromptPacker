@@ -37,18 +37,19 @@ async function sendMessageWithRetry(tabId, message, maxRetries = 3) {
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.id) {
-    try {
-      await ensureContentScript(tab.id);
-      await sendMessageWithRetry(tab.id, { type: "TOGGLE_OVERLAY" });
-    } catch (err) {
-      console.warn("PromptPack: Failed to toggle overlay after retries.", err);
-    }
+  if (!tab.id || !tab.url?.startsWith("https://colab.research.google.com/")) {
+    return;
+  }
+  try {
+    await ensureContentScript(tab.id);
+    await sendMessageWithRetry(tab.id, { type: "TOGGLE_OVERLAY" });
+  } catch (err) {
+    console.warn("PromptPack: Failed to toggle overlay after retries.", err);
   }
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
-  if (command === "copy-notebook-full" && tab.id) {
+  if (command === "copy-notebook-full" && tab.id && tab.url?.startsWith("https://colab.research.google.com/")) {
     try {
       await ensureContentScript(tab.id);
       await sendMessageWithRetry(tab.id, { type: "TRIGGER_QUICK_COPY" });

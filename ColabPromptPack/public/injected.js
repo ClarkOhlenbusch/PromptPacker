@@ -151,8 +151,8 @@
   window.postMessage({ type: "PROMPTPACK_INJECTED_READY" }, COLAB_ORIGIN);
 
   window.addEventListener("message", (event) => {
-    // Security: Only accept messages from the expected origin
-    if (event.origin !== COLAB_ORIGIN) return;
+    // Security: Only accept messages from the expected origin and same window
+    if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
 
     if (event.data.type === "PROMPTPACK_REQUEST_CELLS") {
       try {

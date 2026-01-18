@@ -38,7 +38,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["index.html", "assets/*", "vite.svg", "injected.js"],
+      "resources": ["index.html", "assets/*", "injected.js"],
       "matches": ["https://colab.research.google.com/*"]
     }
   ],

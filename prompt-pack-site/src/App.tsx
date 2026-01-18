@@ -7,7 +7,8 @@ import {
    ChevronRight,
    Zap,
    Layers,
-   CheckCircle2
+   CheckCircle2,
+   Github
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
@@ -15,7 +16,7 @@ import type { Variants } from "framer-motion";
 // Fallback if API fails
 const FALLBACK_VERSION = "v0.1.0";
 const REPO_OWNER = "ClarkOhlenbusch";
-const REPO_NAME = "PromptPacker-Releases";
+const REPO_NAME = "PromptPacker";
 
 export default function App() {
    const [scrolled, setScrolled] = useState(false);
@@ -112,6 +113,9 @@ export default function App() {
                </motion.div>
                <div className="flex items-center gap-8">
                   <a href="#features" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Features</a>
+                  <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="hidden md:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
+                     <Github size={16} /> GitHub
+                  </a>
                   <motion.a
                      whileHover={{ scale: 1.05 }}
                      whileTap={{ scale: 0.95 }}
@@ -335,7 +339,7 @@ export default function App() {
                   </div>
                   <h2 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[#2A3947]">Your code never leaves localhost.</h2>
                   <p className="text-lg text-slate-500 leading-relaxed max-w-2xl mx-auto">
-                     PromptPacker is closed-source for quality control, but remains a local-first application. We don't have servers. We don't track usage. Everything happens entirely on your machine.
+                     PromptPacker is open source and remains a local-first application. We don't have servers. We don't track usage. Everything happens entirely on your machine.
                   </p>
                </div>
             </div>
@@ -349,8 +353,9 @@ export default function App() {
                </div>
                <p className="text-sm text-slate-400">© 2025 PromptPacker. Build with Rust.</p>
                <div className="flex items-center gap-6">
-                  <a href="#" className="text-slate-400 hover:text-[#0069C3] transition-colors">Docs</a>
-                  <a href="#" className="text-slate-400 hover:text-[#0069C3] transition-colors">Terms</a>
+                  <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#0069C3] transition-colors flex items-center gap-1">
+                     <Github size={16} /> GitHub
+                  </a>
                </div>
             </div>
          </footer>

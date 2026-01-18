@@ -84,4 +84,10 @@ npm run dev
 A planned "Heavy" version will introduce a local Small Language Model (SLM) to perform semantic summarization of code files, moving beyond AST skeletonization to true "AI-reading" of files.
 
 ---
-© 2025 PromptPacker. All Rights Reserved.
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+---
+© 2025 PromptPacker

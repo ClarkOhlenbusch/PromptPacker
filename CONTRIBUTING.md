@@ -1,6 +1,6 @@
 # Contributing to PromptPacker
 
-Thank you for your interest in contributing to PromptPacker! As this project is currently **closed source / proprietary**, contributions are primarily limited to the internal team. However, if this project is made public or if you are an internal collaborator, please follow these guidelines.
+Thank you for your interest in contributing to PromptPacker! This project is **open source** under the Apache 2.0 license. We welcome contributions from the community. Please follow these guidelines when contributing.
 
 ## Development Workflow
 

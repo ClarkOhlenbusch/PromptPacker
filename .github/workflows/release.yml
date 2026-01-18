@@ -29,14 +29,11 @@ jobs:
         id: create-release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
-          repository: ClarkOhlenbusch/PromptPacker-Releases
           name: PromptPack Lite ${{ env.VERSION }}
           tag_name: ${{ github.ref_name }}
-          target_commitish: main
           draft: false
           prerelease: false
-          body: "Automated release from private repository."
+          body: "Automated release."
 
   build-tauri:
     needs: create-release
@@ -89,13 +86,10 @@ jobs:
           cd prompt-pack-lite
           npm run tauri build -- ${{ matrix.args }}
 
-      - name: Upload Assets to Public Repo
+      - name: Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
-          repository: ClarkOhlenbusch/PromptPacker-Releases
           tag_name: ${{ github.ref_name }}
-          target_commitish: main
           files: |
             prompt-pack-lite/src-tauri/target/${{ matrix.target_path }}/bundle/dmg/*.dmg
             prompt-pack-lite/src-tauri/target/${{ matrix.target_path }}/bundle/appimage/*.AppImage

@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom";
+import { vi } from "vitest";
 
 // Mock chrome API
-if (typeof global.chrome === "undefined") {
-    (global as any).chrome = {
+if (typeof globalThis.chrome === "undefined") {
+    (globalThis as { chrome?: unknown }).chrome = {
         storage: {
             local: {
                 get: vi.fn((_keys, cb) => cb({})),

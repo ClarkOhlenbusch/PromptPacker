@@ -26,7 +26,11 @@
 #![allow(dead_code)]
 
 pub mod common;
+pub mod config;
+pub mod go;
 pub mod python;
+pub mod rust_lang;
+pub mod typescript;
 
 use tree_sitter::{Language, Parser};
 
@@ -150,7 +154,7 @@ pub fn skeletonize(
 
     let skeleton = match language {
         Some(lang) => {
-            match extract_skeleton(content, lang) {
+            match extract_skeleton(content, lang, _file_path) {
                 Ok(s) => s,
                 Err(_) => fallback_compress(content, extension),
             }
@@ -170,7 +174,7 @@ pub fn skeletonize(
 }
 
 /// Extract skeleton using tree-sitter AST
-fn extract_skeleton(content: &str, lang: SupportedLanguage) -> Result<String, String> {
+fn extract_skeleton(content: &str, lang: SupportedLanguage, file_path: Option<&str>) -> Result<String, String> {
     let mut parser = Parser::new();
     parser.set_language(&lang.tree_sitter_language())
         .map_err(|e| format!("Failed to set language: {}", e))?;
@@ -185,8 +189,27 @@ fn extract_skeleton(content: &str, lang: SupportedLanguage) -> Result<String, St
         SupportedLanguage::Python => {
             Ok(python::extract_skeleton(content, root, source))
         }
-        // Other languages delegate to legacy implementation
-        _ => Err(format!("Language {:?} not yet implemented in new module", lang)),
+        SupportedLanguage::Rust => {
+            Ok(rust_lang::extract_skeleton(content, root, source))
+        }
+        SupportedLanguage::Go => {
+            Ok(go::extract_skeleton(content, root, source))
+        }
+        SupportedLanguage::Json => {
+            Ok(config::extract_json_skeleton(content, root, source))
+        }
+        SupportedLanguage::Css => {
+            Ok(config::extract_css_skeleton(content, root, source))
+        }
+        SupportedLanguage::Html => {
+            Ok(config::extract_html_skeleton(content, root, source))
+        }
+        SupportedLanguage::TypeScript | SupportedLanguage::JavaScript => {
+            Ok(typescript::extract_skeleton(content, root, source, file_path, false))
+        }
+        SupportedLanguage::TypeScriptTsx | SupportedLanguage::JavaScriptJsx => {
+            Ok(typescript::extract_skeleton(content, root, source, file_path, true))
+        }
     }
 }
 
@@ -199,10 +222,22 @@ pub fn skeletonize_with_path(
     extension: &str,
     file_path: Option<&str>,
 ) -> SkeletonResult {
-    // Try new implementation first for Python
+    // Try new implementation first for Python and Rust
     let language = SupportedLanguage::from_extension(extension);
 
-    if let Some(SupportedLanguage::Python) = language {
+    if matches!(
+        language,
+        Some(SupportedLanguage::Python)
+            | Some(SupportedLanguage::Rust)
+            | Some(SupportedLanguage::Go)
+            | Some(SupportedLanguage::Json)
+            | Some(SupportedLanguage::Css)
+            | Some(SupportedLanguage::Html)
+            | Some(SupportedLanguage::TypeScript)
+            | Some(SupportedLanguage::TypeScriptTsx)
+            | Some(SupportedLanguage::JavaScript)
+            | Some(SupportedLanguage::JavaScriptJsx)
+    ) {
         return skeletonize(content, extension, file_path);
     }
 

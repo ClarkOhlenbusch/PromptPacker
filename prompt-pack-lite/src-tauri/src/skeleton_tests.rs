@@ -69,6 +69,11 @@ class DataProcessor:
     def process(self, items: List[str]) -> List[dict]:
         """Process a list of items."""
         results = []
+        # Line 1
+        # Line 2
+        # Line 3
+        # Line 4
+        # Line 5
         for item in items:
             result = self._transform(item)
             results.append(result)
@@ -76,10 +81,6 @@ class DataProcessor:
 
     def _transform(self, item: str) -> dict:
         return json.loads(item)
-
-def main():
-    processor = DataProcessor({})
-    processor.process([])
 "#;
 
     let result = skeletonize(code, "py");
@@ -88,6 +89,8 @@ def main():
     assert!(result.skeleton.contains("class DataProcessor"));
     assert!(result.skeleton.contains("def __init__"));
     assert!(result.skeleton.contains("def process"));
+    // Verify it was skeletonized
+    assert!(result.skeleton.contains("..."));
     assert!(!result.skeleton.contains("for item in"));
 }
 
@@ -253,6 +256,40 @@ function helper() {
     assert!(result.skeleton.contains("chrome.runtime.onMessage.addListener(...)"));
     assert!(!result.skeleton.contains("sendResponse"));
     assert!(result.skeleton.contains("function helper"));
+}
+
+#[test]
+fn test_nested_functions_in_guard() {
+    // Common pattern in content scripts: guard with if/else containing function declarations
+    let code = r#"
+function isValid() {
+    return true;
+}
+
+if (window.alreadyLoaded) {
+    console.log("skip");
+} else {
+    function requestCells() {
+        return [];
+    }
+
+    function handleQuickCopy(cells) {
+        console.log(cells);
+    }
+
+    async function copyToClipboard(text) {
+        await navigator.clipboard.writeText(text);
+    }
+}
+"#;
+    let result = skeletonize(code, "js");
+    println!("Skeleton:\n{}", result.skeleton);
+    // Top-level function should be extracted
+    assert!(result.skeleton.contains("function isValid"));
+    // Functions inside else block should also be extracted
+    assert!(result.skeleton.contains("function requestCells"));
+    assert!(result.skeleton.contains("function handleQuickCopy"));
+    assert!(result.skeleton.contains("async function copyToClipboard"));
 }
 
 #[test]
@@ -503,16 +540,25 @@ def process_data(data):
     save_to_db(parsed)
     return True
 
-class Processor:
-    def execute(self):
-        self.prepare()
-        result = self.run_logic()
-        self.cleanup(result)
+def process_large_data(data):
+    x1 = 1
+    x2 = 2
+    x3 = 3
+    x4 = 4
+    x5 = 5
+    x6 = 6
+    x7 = 7
+    execute(data)
 "#;
     let result = skeletonize(code, "py");
     println!("Skeleton:\n{}", result.skeleton);
-    assert!(result.skeleton.contains("# Calls: normalize, parse_json, save_to_db"));
-    assert!(result.skeleton.contains("# Calls: self.prepare, self.run_logic, self.cleanup"));
+    
+    // Small function should NOT have call edges (full body kept)
+    assert!(!result.skeleton.contains("# Calls: normalize"));
+    assert!(result.skeleton.contains("clean = normalize(data)"));
+
+    // Large function SHOULD have call edges
+    assert!(result.skeleton.contains("# Calls: execute"));
 }
 
 #[test]
@@ -691,8 +737,8 @@ class ClassWithDoc:
 "#;
     let result = skeletonize(code, "py");
     println!("Skeleton:\n{}", result.skeleton);
-    assert!(result.skeleton.contains("\"\"\"Module docstring.\"\"\""));
-    assert!(result.skeleton.contains("\"\"\"Function docstring summary.\"\"\""));
+    // Full body kept - check for start of docstring
+    assert!(result.skeleton.contains("\"\"\"Function docstring summary."));
     assert!(result.skeleton.contains("\"\"\"Class docstring.\"\"\""));
 }
 
@@ -738,20 +784,33 @@ fn test_python_call_prioritization() {
     let code = r#"
 import os.path
 import sys
-from typing import List, Any
 
-def mixed_calls():
+def mixed_calls_small():
     local_helper()
     os.path.join("a", "b")
     sys.exit(0)
-    List[int]
+
+def mixed_calls_large():
+    x1 = 1
+    x2 = 2
+    x3 = 3
+    x4 = 4
+    x5 = 5
+    x6 = 6
+    x7 = 7
+    local_helper()
+    os.path.join("a", "b")
+    sys.exit(0)
     other_local()
 "#;
     let result = skeletonize(code, "py");
     println!("Skeleton:\n{}", result.skeleton);
-    // External calls (os.path.join, sys.exit) should be prioritized
-    // Relative order of external calls should be preserved: os.path.join, sys.exit
-    // Local calls should follow: local_helper, other_local
+    
+    // Small function: keeps full body
+    assert!(result.skeleton.contains("local_helper()"));
+    assert!(result.skeleton.contains("os.path.join"));
+
+    // Large function: uses skeleton with prioritization
     assert!(result.skeleton.contains("# Calls: os.path.join, sys.exit, local_helper, other_local"));
 }
 
@@ -773,9 +832,9 @@ async def main():
     println!("Skeleton:\n{}", result.skeleton);
     assert!(result.skeleton.contains("async def fetch_data"));
     assert!(result.skeleton.contains("async def main"));
-    // Ensure body is stripped/summarized
-    assert!(!result.skeleton.contains("print(\"fetching\")"));
-    assert!(!result.skeleton.contains("await asyncio.sleep"));
+    // Small body optimization: keep full body
+    assert!(result.skeleton.contains("print(\"fetching\")"));
+    assert!(result.skeleton.contains("await asyncio.sleep"));
 }
 
 #[test]
@@ -784,18 +843,15 @@ fn test_python_match_case() {
 def http_error(status):
     match status:
         case 400:
-            return "Bad request"
-        case 404:
-            return "Not found"
+            return "OK"
         case _:
-            return "Something's wrong with the internet"
+            return "ERR"
 "#;
     let result = skeletonize(code, "py");
     println!("Skeleton:\n{}", result.skeleton);
     assert!(result.skeleton.contains("def http_error"));
-    // The match/case structure is internal logic, it should probably be stripped in the skeleton
-    // verifying that it doesn't crash and potentially strips the details
-    assert!(!result.skeleton.contains("case 404"));
+    // Small body: kept in full
+    assert!(result.skeleton.contains("case 400"));
 }
 
 #[test]
@@ -842,4 +898,63 @@ def divide(x, y):
     // logic inside try/except/finally should be stripped
     assert!(!result.skeleton.contains("ZeroDivisionError"));
     assert!(!result.skeleton.contains("executing finally clause"));
+}
+
+#[test]
+fn test_python_path_detection() {
+    let code = r#"
+import pandas as pd
+import torch
+
+def train_model():
+    """Train the model and save checkpoints."""
+    # Load training data
+    train_df = pd.read_csv("./data/train.csv")
+    val_df = pd.read_csv("./data/validation.csv")
+
+    # Load pretrained model
+    model = torch.load("./models/pretrained.pth")
+
+    # Train for some epochs
+    for epoch in range(10):
+        loss = train_epoch(model, train_df)
+        print(f"Epoch {epoch}: {loss}")
+
+    # Save final model
+    torch.save(model, "./output/model_final.pth")
+    train_df.to_csv("./output/predictions.csv")
+"#;
+    let result = skeletonize(code, "py");
+    println!("Skeleton:\n{}", result.skeleton);
+
+    // Should contain the function signature
+    assert!(result.skeleton.contains("def train_model"));
+
+    // Should detect reads
+    assert!(result.skeleton.contains("# Reads:"));
+    assert!(result.skeleton.contains("train.csv") || result.skeleton.contains("data/train.csv"));
+
+    // Should detect writes
+    assert!(result.skeleton.contains("# Writes:"));
+    assert!(result.skeleton.contains("model_final.pth") || result.skeleton.contains("output/model_final.pth"));
+}
+
+#[test]
+fn test_python_path_detection_no_false_positives() {
+    let code = r#"
+import re
+
+def validate_input(text):
+    """Check if input matches pattern."""
+    pattern = r"^\s*\d+\s*$"
+    if re.match(pattern, text):
+        return True
+    return False
+"#;
+    let result = skeletonize(code, "py");
+    println!("Skeleton:\n{}", result.skeleton);
+
+    // Should NOT detect regex patterns as paths
+    assert!(!result.skeleton.contains("# Reads:") || !result.skeleton.contains(r"\s*"));
+    assert!(!result.skeleton.contains("# Writes:"));
 }

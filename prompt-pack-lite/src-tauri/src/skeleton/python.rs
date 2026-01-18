@@ -14,6 +14,7 @@ use tree_sitter::Node;
 use super::common::{
     get_node_text, truncate_line, trim_docstring,
     classify_comment, should_keep_comment, collect_summary_phrases,
+    looks_like_path,
     CallEdgeList, StateContract,
     MAX_DEF_LINE_LEN, MAX_CLASS_ATTR_LEN, MAX_SIMPLE_ASSIGNMENT_LEN,
     MAX_CALL_EDGE_NAMES, MAX_CALL_EDGE_NAME_LEN, MAX_CALL_EDGE_NODES,
@@ -218,7 +219,30 @@ fn extract_function_skeleton(
     output.push_str(&signature);
     output.push_str(":\n");
 
-    // Output docstring if found
+    if let Some(body) = body_node {
+        let body_text = get_node_text(body, source);
+
+        // Small body optimization: keep full text for short functions
+        if super::common::should_keep_full_body(body_text) {
+             let mut has_output = false;
+             for line in body_text.lines() {
+                 let trimmed = line.trim();
+                 if !trimmed.is_empty() {
+                     output.push_str(&body_indent);
+                     output.push_str(trimmed);
+                     output.push('\n');
+                     has_output = true;
+                 }
+             }
+             if !has_output {
+                 output.push_str(&body_indent);
+                 output.push_str("pass\n");
+             }
+             return;
+        }
+    }
+
+    // Output docstring summary if found
     if let Some(doc) = &docstring {
         output.push_str(&body_indent);
         output.push_str(doc);
@@ -230,6 +254,10 @@ fn extract_function_skeleton(
 
         // Emit call edges
         emit_call_edges(output, body, source, &body_indent, ctx.external_bindings);
+
+        // Emit file path reads/writes (data flow)
+        let contract = build_state_contract(body, source);
+        emit_state_contract(output, &contract, &body_indent);
 
         // Emit summary phrases
         let phrases = collect_summary_phrases(body_text);
@@ -593,13 +621,175 @@ fn is_simple_assignment(node: Node, source: &[u8], max_len: usize) -> bool {
     !text.contains('(') && text.len() < max_len
 }
 
-// ============ State Contract (Future Enhancement) ============
+// ============ State Contract / Path Detection ============
 
-/// Build a state contract for a code block
-/// TODO: Implement path extraction and read/write classification
-#[allow(dead_code)]
-pub fn build_state_contract(_node: Node, _source: &[u8]) -> StateContract {
-    StateContract::new()
+/// Build a state contract by extracting file paths and classifying read/write intent
+pub fn build_state_contract(node: Node, source: &[u8]) -> StateContract {
+    let mut contract = StateContract::new();
+    collect_paths_recursive(node, source, &mut contract);
+    contract
+}
+
+/// Recursively collect file paths from string literals
+fn collect_paths_recursive(node: Node, source: &[u8], contract: &mut StateContract) {
+    // Check if this is a string that looks like a path
+    if node.kind() == "string" {
+        let text = get_node_text(node, source);
+        let inner = extract_string_content(text);
+
+        if looks_like_path(inner) && !inner.is_empty() {
+            // Determine read/write intent from parent context
+            let intent = determine_path_intent(node, source);
+            let path_str = inner.to_string();
+
+            match intent {
+                PathIntent::Read => {
+                    if !contract.reads.contains(&path_str) {
+                        contract.reads.push(path_str);
+                    }
+                }
+                PathIntent::Write => {
+                    if !contract.writes.contains(&path_str) {
+                        contract.writes.push(path_str);
+                    }
+                }
+            }
+        }
+    }
+
+    // Don't recurse into nested function/class definitions
+    if is_scope_boundary(node.kind()) && node.kind() != "block" {
+        return;
+    }
+
+    // Recurse into children
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_paths_recursive(child, source, contract);
+    }
+}
+
+/// Extract the inner content of a string literal (remove quotes)
+fn extract_string_content(text: &str) -> &str {
+    let t = text.trim();
+
+    // Handle f-strings: f"..." or f'...'
+    let t = t.strip_prefix('f').or_else(|| t.strip_prefix('F')).unwrap_or(t);
+    let t = t.strip_prefix('r').or_else(|| t.strip_prefix('R')).unwrap_or(t);
+    let t = t.strip_prefix('b').or_else(|| t.strip_prefix('B')).unwrap_or(t);
+
+    // Triple quotes
+    if t.starts_with("\"\"\"") && t.ends_with("\"\"\"") && t.len() >= 6 {
+        return &t[3..t.len()-3];
+    }
+    if t.starts_with("'''") && t.ends_with("'''") && t.len() >= 6 {
+        return &t[3..t.len()-3];
+    }
+
+    // Single/double quotes
+    if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
+        return &t[1..t.len()-1];
+    }
+    if t.starts_with('\'') && t.ends_with('\'') && t.len() >= 2 {
+        return &t[1..t.len()-1];
+    }
+
+    t
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PathIntent {
+    Read,
+    Write,
+}
+
+/// Determine if a path is being read or written based on AST context
+fn determine_path_intent(string_node: Node, source: &[u8]) -> PathIntent {
+    // Walk up to find the containing call or assignment
+    let mut current = string_node;
+
+    for _ in 0..10 {  // Limit traversal depth
+        if let Some(parent) = current.parent() {
+            let parent_text = get_node_text(parent, source).to_lowercase();
+
+            // Check for write patterns
+            if parent.kind() == "call" {
+                // Get the function name being called
+                if let Some(func) = parent.child_by_field_name("function").or_else(|| parent.child(0)) {
+                    let func_text = get_node_text(func, source).to_lowercase();
+
+                    // Write patterns
+                    if func_text.contains("save") || func_text.contains("dump") ||
+                       func_text.contains("write") || func_text.contains("to_csv") ||
+                       func_text.contains("to_json") || func_text.contains("to_parquet") ||
+                       func_text.contains("to_pickle") || func_text.contains("to_excel") {
+                        return PathIntent::Write;
+                    }
+
+                    // Read patterns (explicit)
+                    if func_text.contains("read") || func_text.contains("load") ||
+                       func_text.contains("from_") {
+                        return PathIntent::Read;
+                    }
+                }
+            }
+
+            // Check for open() with write mode
+            if parent_text.contains("open(") {
+                if parent_text.contains("\"w") || parent_text.contains("'w") ||
+                   parent_text.contains("\"a") || parent_text.contains("'a") {
+                    return PathIntent::Write;
+                }
+            }
+
+            current = parent;
+        } else {
+            break;
+        }
+    }
+
+    // Default to read
+    PathIntent::Read
+}
+
+/// Emit state contract (Reads/Writes) to output
+fn emit_state_contract(output: &mut String, contract: &StateContract, indent: &str) {
+    if !contract.reads.is_empty() {
+        output.push_str(indent);
+        output.push_str("# Reads: ");
+        output.push_str(&format_paths(&contract.reads));
+        output.push('\n');
+    }
+
+    if !contract.writes.is_empty() {
+        output.push_str(indent);
+        output.push_str("# Writes: ");
+        output.push_str(&format_paths(&contract.writes));
+        output.push('\n');
+    }
+}
+
+/// Format a list of paths for display
+fn format_paths(paths: &[String]) -> String {
+    const MAX_PATHS: usize = 5;
+    const MAX_PATH_LEN: usize = 40;
+
+    let formatted: Vec<String> = paths.iter()
+        .take(MAX_PATHS)
+        .map(|p| {
+            if p.len() > MAX_PATH_LEN {
+                format!("...{}", &p[p.len().saturating_sub(MAX_PATH_LEN-3)..])
+            } else {
+                p.clone()
+            }
+        })
+        .collect();
+
+    let mut result = formatted.join(", ");
+    if paths.len() > MAX_PATHS {
+        result.push_str(", ...");
+    }
+    result
 }
 
 #[cfg(test)]

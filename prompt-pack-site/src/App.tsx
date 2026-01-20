@@ -8,7 +8,8 @@ import {
    Zap,
    Layers,
    CheckCircle2,
-   Github
+   Github,
+   Star
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
@@ -23,6 +24,7 @@ export default function App() {
    const [latestVersion, setLatestVersion] = useState(FALLBACK_VERSION);
    const [downloadUrl, setDownloadUrl] = useState("");
    const [osName, setOsName] = useState("Mac");
+   const [starCount, setStarCount] = useState<number | null>(null);
 
    useEffect(() => {
       const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -55,7 +57,24 @@ export default function App() {
          })
          .catch(err => console.error("Failed to fetch latest version", err));
 
-      return () => window.removeEventListener("scroll", handleScroll);
+      const fetchStarCount = () => {
+         fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`)
+            .then(res => res.json())
+            .then(data => {
+               if (typeof data.stargazers_count === "number") {
+                  setStarCount(data.stargazers_count);
+               }
+            })
+            .catch(err => console.error("Failed to fetch GitHub stars", err));
+      };
+
+      fetchStarCount();
+      const starInterval = window.setInterval(fetchStarCount, 5 * 60 * 1000);
+
+      return () => {
+         window.removeEventListener("scroll", handleScroll);
+         window.clearInterval(starInterval);
+      };
    }, []);
 
    const getFallbackUrl = () => {
@@ -65,6 +84,7 @@ export default function App() {
    };
 
    const currentDownloadLink = downloadUrl || getFallbackUrl();
+   const formattedStars = starCount === null ? "..." : starCount.toLocaleString();
 
    const containerVariants: Variants = {
       hidden: { opacity: 0 },
@@ -115,6 +135,10 @@ export default function App() {
                   <a href="#features" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Features</a>
                   <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="hidden md:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
                      <Github size={16} /> GitHub
+                     <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                        <Star size={12} className="text-amber-500" />
+                        {formattedStars}
+                     </span>
                   </a>
                   <motion.a
                      whileHover={{ scale: 1.05 }}

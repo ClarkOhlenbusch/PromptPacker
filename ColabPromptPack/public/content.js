@@ -181,7 +181,6 @@ window.addEventListener("keydown", (e) => {
      e.stopPropagation();
      pendingQuickCopy = true;
      requestCells();
-     showToast("Quick Copy Triggered...");
   }
 
 });

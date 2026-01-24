@@ -29,6 +29,9 @@ export default function App() {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Error state
+  const [scanError, setScanError] = useState<string | null>(null);
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState<{ modifiers: string[], key: string } | null>(null);
@@ -99,8 +102,15 @@ export default function App() {
 
   async function scanProject(path: string) {
     setLoading(true);
+    setScanError(null);
     try {
       const entries = await fs.scanProject(path);
+      
+      if (entries.length === 0) {
+        setScanError("No cells found. Make sure you're on a Google Colab notebook page.");
+        return;
+      }
+      
       setFiles(entries);
 
       // Auto-select ALL files as Tier 1 (Full) by default
@@ -120,6 +130,7 @@ export default function App() {
 
     } catch (e) {
       console.error("Scan failed", e);
+      setScanError(e instanceof Error ? e.message : "Failed to scan notebook cells");
     } finally {
       setLoading(false);
     }
@@ -520,7 +531,25 @@ export default function App() {
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {files.length === 0 && !loading && (
+            {scanError && !loading && (
+              <div className="flex flex-col items-center justify-center h-full text-center p-8 gap-4">
+                <div className="bg-red-50 p-4 rounded-full">
+                  <X size={28} className="text-red-500" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-gray-800">Scan Failed</p>
+                  <p className="text-xs text-gray-600 mt-1 max-w-[200px]">{scanError}</p>
+                </div>
+                <button
+                  onClick={handleOpenFolder}
+                  className="text-xs font-bold text-packer-blue hover:underline"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {files.length === 0 && !loading && !scanError && (
               <button
                 onClick={handleOpenFolder}
                 className="w-full h-full flex flex-col items-center justify-center text-packer-text-muted p-8 text-center gap-4 group hover:bg-slate-50/80 transition-all"

@@ -5,6 +5,7 @@ export interface FileEntry {
   size: number;
   line_count?: number;
   output?: string;
+  content?: string; // Cell content (available in Colab extension)
 }
 
 export interface IFileSystem {

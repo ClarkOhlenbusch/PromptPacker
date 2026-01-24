@@ -5,7 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, GitCompare, Camera, Trash2 } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
 
@@ -15,6 +15,21 @@ interface FileEntry {
   is_dir: boolean;
   size: number;
   line_count?: number;
+}
+
+interface DiffLine {
+  type: 'added' | 'removed' | 'unchanged';
+  line: string;
+  old_line_num: number | null;
+  new_line_num: number | null;
+}
+
+interface FileDiff {
+  path: string;
+  relative_path: string;
+  previous: string;
+  current: string;
+  diff: DiffLine[];
 }
 
 export default function App() {
@@ -39,6 +54,18 @@ export default function App() {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
   const [includeFileTree, setIncludeFileTree] = useState(true);
+
+  // Token counting
+  const [tokenCount, setTokenCount] = useState<number | null>(null);
+  const [countingTokens, setCountingTokens] = useState(false);
+
+  // Diff tracking
+  const [fileDiffs, setFileDiffs] = useState<FileDiff[]>([]);
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [loadingDiffs, setLoadingDiffs] = useState(false);
+  const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(new Set());
+  const [diffCopied, setDiffCopied] = useState(false);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
 
   function requestScan(path: string, immediate = false) {
     pendingScanPath.current = path;
@@ -97,6 +124,75 @@ export default function App() {
       pendingScanPath.current = null;
     };
   }, [projectPath]);
+
+  // Count tokens when selection changes
+  useEffect(() => {
+    const fullPaths = files.filter(f => tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
+    const skeletonPaths = files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
+    const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir);
+    
+    if (selectedFiles.length === 0 && !preamble.trim() && !goal.trim()) {
+      setTokenCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    setCountingTokens(true);
+
+    (async () => {
+      try {
+        // Build overhead text (headers, file tree, formatting)
+        let overhead = "";
+        
+        if (preamble.trim()) {
+          overhead += "PREAMBLE\n" + preamble + "\n\n";
+        }
+        
+        if (includeFileTree && files.length > 0) {
+          overhead += "TREE\n";
+          // Estimate tree: ~50 chars per file entry on average
+          overhead += files.map(f => `├─ ${f.relative_path} (${f.size} B, ${f.line_count || 0} lines)\n`).join("");
+          overhead += "\n\n";
+        }
+        
+        // Add file headers/footers
+        selectedFiles.forEach(f => {
+          const isFull = tier1Paths.has(f.path);
+          overhead += `FILE ${f.relative_path} ${isFull ? "FULL" : "SKELETON"}\n`;
+          overhead += "\nEND_FILE\n\n";
+        });
+        
+        if (goal.trim()) {
+          overhead += "GOAL\n" + goal + "\n";
+        }
+        
+        const overheadTokens: number = overhead.length > 0 
+          ? await invoke("count_tokens", { text: overhead })
+          : 0;
+
+        const fullTokens: number = fullPaths.length > 0 
+          ? await invoke("count_tokens_for_files", { paths: fullPaths })
+          : 0;
+        
+        // For skeleton files, count full tokens then apply 30% estimate
+        const skeletonFullTokens: number = skeletonPaths.length > 0
+          ? await invoke("count_tokens_for_files", { paths: skeletonPaths })
+          : 0;
+        const skeletonTokens = Math.round(skeletonFullTokens * 0.3);
+
+        if (!cancelled) {
+          setTokenCount(overheadTokens + fullTokens + skeletonTokens);
+        }
+      } catch (e) {
+        console.error("Token counting failed:", e);
+        if (!cancelled) setTokenCount(null);
+      } finally {
+        if (!cancelled) setCountingTokens(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [files, selectedPaths, tier1Paths, preamble, goal, includeFileTree]);
 
   async function handleOpenFolder() {
     try {
@@ -255,6 +351,94 @@ export default function App() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  // Diff handlers
+  const handleTakeSnapshot = async () => {
+    if (!projectPath) return;
+    const paths = files.filter(f => !f.is_dir).map(f => f.path);
+    try {
+      const count = await invoke<number>("take_snapshot", { paths });
+      setHasSnapshot(true);
+      alert(`Snapshot taken: ${count} files`);
+    } catch (e) {
+      console.error("Snapshot failed", e);
+    }
+  };
+
+  const handleViewDiffs = async () => {
+    if (!projectPath) return;
+    setLoadingDiffs(true);
+    try {
+      const paths = files.filter(f => !f.is_dir).map(f => f.path);
+      const diffs = await invoke<FileDiff[]>("get_diffs", { paths, rootPath: projectPath });
+      setFileDiffs(diffs);
+      setSelectedDiffPaths(new Set(diffs.map(d => d.path)));
+      setShowDiffModal(true);
+    } catch (e) {
+      console.error("Get diffs failed", e);
+    } finally {
+      setLoadingDiffs(false);
+    }
+  };
+
+  const handleClearSnapshot = async () => {
+    try {
+      await invoke("clear_snapshot");
+      setHasSnapshot(false);
+      setFileDiffs([]);
+    } catch (e) {
+      console.error("Clear snapshot failed", e);
+    }
+  };
+
+  const toggleDiffSelection = (path: string) => {
+    const newSet = new Set(selectedDiffPaths);
+    if (newSet.has(path)) newSet.delete(path);
+    else newSet.add(path);
+    setSelectedDiffPaths(newSet);
+  };
+
+  const generateDiffPrompt = (): string => {
+    const selected = fileDiffs.filter(d => selectedDiffPaths.has(d.path));
+    if (selected.length === 0) return "";
+    let output = "### CHANGES MADE ###\n\n";
+    output += `The following ${selected.length} file(s) have been modified:\n\n`;
+    selected.forEach(diff => {
+      output += `---\n\n#### ${diff.relative_path} ####\n\n`;
+      output += `**Previous Code:**\n\`\`\`\n${diff.previous}\n\`\`\`\n\n`;
+      output += `**Updated Code:**\n\`\`\`\n${diff.current}\n\`\`\`\n\n`;
+      const added = diff.diff.filter(d => d.type === 'added').length;
+      const removed = diff.diff.filter(d => d.type === 'removed').length;
+      output += `*Changes: +${added} lines, -${removed} lines*\n\n`;
+    });
+    return output;
+  };
+
+  const copyDiffToClipboard = async () => {
+    const diffPrompt = generateDiffPrompt();
+    if (!diffPrompt) return;
+    try {
+      await writeClipboardText(diffPrompt);
+      setDiffCopied(true);
+      setTimeout(() => setDiffCopied(false), 2000);
+    } catch (e) {
+      console.error("Copy failed", e);
+    }
+  };
+
+  const renderDiffLine = (line: DiffLine, index: number) => {
+    const bgColor = line.type === 'added' ? 'bg-green-100' : line.type === 'removed' ? 'bg-red-100' : 'bg-white';
+    const textColor = line.type === 'added' ? 'text-green-800' : line.type === 'removed' ? 'text-red-800' : 'text-gray-700';
+    const prefix = line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ';
+    const lineNum = line.type === 'removed' ? line.old_line_num : line.new_line_num;
+    return (
+      <div key={index} className={`${bgColor} ${textColor} font-mono text-xs flex`}>
+        <span className="w-10 text-right pr-2 text-gray-400 select-none border-r border-gray-200">{lineNum || ''}</span>
+        <span className="w-4 text-center select-none">{prefix}</span>
+        <span className="flex-1 whitespace-pre overflow-x-auto">{line.line}</span>
+      </div>
+    );
   };
 
   async function handleAutoFill() {
@@ -504,12 +688,7 @@ export default function App() {
                   <div className="flex flex-col gap-1 text-right">
                     <span className="text-[11px] font-bold text-packer-text-muted uppercase">Estimated Tokens</span>
                     <span className="text-2xl font-bold text-packer-blue font-mono">
-                      ~{Math.round(
-                        files.filter(f => tier1Paths.has(f.path)).reduce((acc, f) => acc + (f.size / 4), 0) +
-                        // Skeleton files: ~70% compression on average (0.3x tokens)
-                        files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).reduce((acc, f) => acc + ((f.size / 4) * 0.3), 0) +
-                        (files.length * 2)
-                      ).toLocaleString()}
+                      {countingTokens ? "..." : tokenCount !== null ? tokenCount.toLocaleString() : "—"}
                     </span>
                   </div>
                 </div>
@@ -519,7 +698,27 @@ export default function App() {
           </div>
 
           {/* Action Footer */}
-          <div className="p-6 border-t border-packer-border bg-white flex justify-end gap-4 z-10">
+          <div className="p-6 border-t border-packer-border bg-white flex justify-between items-center z-10">
+            <div className="flex gap-2">
+              <button
+                onClick={handleTakeSnapshot}
+                disabled={!projectPath || files.length === 0}
+                className="px-4 py-2.5 border border-slate-200 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium text-packer-text-muted hover:text-blue-600 transition-all flex items-center gap-2"
+                title="Take snapshot of current files"
+              >
+                <Camera size={16} />
+                Snapshot
+              </button>
+              <button
+                onClick={handleViewDiffs}
+                disabled={!hasSnapshot || loadingDiffs}
+                className="px-4 py-2.5 border border-slate-200 hover:bg-purple-50 hover:border-purple-300 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium text-packer-text-muted hover:text-purple-600 transition-all flex items-center gap-2"
+                title="View changes since snapshot"
+              >
+                {loadingDiffs ? <RefreshCw className="animate-spin" size={16} /> : <GitCompare size={16} />}
+                Diff
+              </button>
+            </div>
             <button
               onClick={handleGenerate}
               disabled={generating || selectedPaths.size === 0}
@@ -564,6 +763,92 @@ export default function App() {
                 <button onClick={copyToClipboard} className="px-8 py-2.5 bg-packer-blue hover:bg-[#1a252f] rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-blue-500/20 transition transform active:scale-[0.98]">
                   {copied ? <CheckCircle2 size={18} strokeWidth={2.5} /> : <Copy size={18} strokeWidth={2.5} />}
                   {copied ? "Copied!" : "Copy to Clipboard"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diff Modal */}
+      {showDiffModal && (
+        <div className="fixed inset-0 z-50 bg-packer-grey/20 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-6xl h-full max-h-[90vh] rounded-lg shadow-2xl flex flex-col border border-packer-border overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-packer-border bg-white">
+              <div className="flex items-center gap-3">
+                <div className="bg-purple-50 p-2 rounded">
+                  <GitCompare className="text-purple-600" size={24} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-packer-grey">Changes Detected</h3>
+                  <p className="text-xs text-packer-text-muted">
+                    {fileDiffs.length === 0 ? "No changes since snapshot" : `${fileDiffs.length} file(s) modified`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={handleTakeSnapshot} className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 hover:bg-blue-50 hover:border-blue-300 text-packer-text-muted hover:text-blue-600 transition-all text-xs font-medium">
+                  <Camera size={14} /> Snapshot
+                </button>
+                <button onClick={handleClearSnapshot} className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 hover:bg-red-50 hover:border-red-300 text-packer-text-muted hover:text-red-600 transition-all text-xs font-medium">
+                  <Trash2 size={14} /> Clear
+                </button>
+                <button onClick={() => setShowDiffModal(false)} className="hover:bg-slate-100 text-packer-text-muted hover:text-packer-grey p-2 rounded-full transition ml-2">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {fileDiffs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-packer-text-muted">
+                  <GitCompare size={48} className="mb-4 opacity-30" />
+                  <p className="font-medium">No changes detected</p>
+                  <p className="text-xs mt-1">Make some edits, then click "Diff" again</p>
+                </div>
+              ) : (
+                fileDiffs.map((diff) => (
+                  <div key={diff.path} className="border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between bg-slate-50 px-4 py-2 border-b border-slate-200">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={selectedDiffPaths.has(diff.path)} onChange={() => toggleDiffSelection(diff.path)} className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
+                        <span className="font-bold text-sm text-packer-grey">{diff.relative_path}</span>
+                        <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">+{diff.diff.filter(d => d.type === 'added').length}</span>
+                        <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded">-{diff.diff.filter(d => d.type === 'removed').length}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 divide-x divide-slate-200">
+                      <div className="flex flex-col">
+                        <div className="bg-red-50/50 px-3 py-1.5 border-b border-slate-200"><span className="text-xs font-medium text-red-700">Previous</span></div>
+                        <div className="overflow-x-auto max-h-64 overflow-y-auto bg-slate-50/50">
+                          <pre className="text-xs font-mono p-3 whitespace-pre text-gray-700">{diff.previous}</pre>
+                        </div>
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="bg-green-50/50 px-3 py-1.5 border-b border-slate-200"><span className="text-xs font-medium text-green-700">Current</span></div>
+                        <div className="overflow-x-auto max-h-64 overflow-y-auto bg-slate-50/50">
+                          <pre className="text-xs font-mono p-3 whitespace-pre text-gray-700">{diff.current}</pre>
+                        </div>
+                      </div>
+                    </div>
+                    <details className="border-t border-slate-200">
+                      <summary className="px-4 py-2 text-xs font-medium text-packer-text-muted cursor-pointer hover:bg-slate-50">Show unified diff</summary>
+                      <div className="max-h-48 overflow-y-auto border-t border-slate-100">
+                        {diff.diff.map((line, idx) => renderDiffLine(line, idx))}
+                      </div>
+                    </details>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-packer-border bg-white flex justify-between items-center">
+              <span className="text-xs text-packer-text-muted">{selectedDiffPaths.size} of {fileDiffs.length} changes selected</span>
+              <div className="flex gap-4">
+                <button onClick={() => setShowDiffModal(false)} className="px-6 py-2.5 hover:bg-slate-50 border border-packer-border rounded font-semibold text-packer-text-muted transition">Close</button>
+                <button onClick={copyDiffToClipboard} disabled={selectedDiffPaths.size === 0} className="px-8 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-purple-500/20 transition transform active:scale-[0.98]">
+                  {diffCopied ? <CheckCircle2 size={18} strokeWidth={2.5} /> : <Copy size={18} strokeWidth={2.5} />}
+                  {diffCopied ? "Copied!" : "Copy Changes"}
                 </button>
               </div>
             </div>

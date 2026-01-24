@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use ignore::WalkBuilder;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{self, Read};
@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
+use tiktoken_rs::cl100k_base;
+use similar::{ChangeTag, TextDiff};
 
 mod skeleton;
 mod skeleton_legacy;
@@ -82,6 +84,10 @@ const IGNORED_FILE_SUFFIXES: &[&str] = &[
 
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
+}
+
+struct SnapshotState {
+    snapshot: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -405,6 +411,122 @@ async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, Str
     }).collect()
 }
 
+/// Count tokens for given text using cl100k_base encoding (GPT-3.5/4 tokenizer)
+#[tauri::command]
+fn count_tokens(text: String) -> Result<usize, String> {
+    let bpe = cl100k_base().map_err(|e| e.to_string())?;
+    Ok(bpe.encode_with_special_tokens(&text).len())
+}
+
+/// Count tokens for multiple file paths, reading content from disk
+#[tauri::command]
+async fn count_tokens_for_files(paths: Vec<String>) -> Result<usize, String> {
+    let bpe = cl100k_base().map_err(|e| e.to_string())?;
+    let mut total = 0;
+    
+    for path in paths {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            total += bpe.encode_with_special_tokens(&content).len();
+        }
+    }
+    
+    Ok(total)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DiffLine {
+    #[serde(rename = "type")]
+    line_type: String,
+    line: String,
+    old_line_num: Option<usize>,
+    new_line_num: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileDiff {
+    path: String,
+    relative_path: String,
+    previous: String,
+    current: String,
+    diff: Vec<DiffLine>,
+}
+
+/// Take a snapshot of current file contents for diff comparison
+#[tauri::command]
+async fn take_snapshot(paths: Vec<String>, state: State<'_, SnapshotState>) -> Result<usize, String> {
+    let mut snapshot = state.snapshot.lock().map_err(|_| "Lock error")?;
+    snapshot.clear();
+    
+    for path in &paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            snapshot.insert(path.clone(), content);
+        }
+    }
+    
+    Ok(snapshot.len())
+}
+
+/// Get diffs between snapshot and current file contents
+#[tauri::command]
+async fn get_diffs(paths: Vec<String>, root_path: String, state: State<'_, SnapshotState>) -> Result<Vec<FileDiff>, String> {
+    let snapshot = state.snapshot.lock().map_err(|_| "Lock error")?;
+    let root = Path::new(&root_path);
+    let mut diffs = Vec::new();
+    
+    for path in paths {
+        let Some(prev_content) = snapshot.get(&path) else { continue };
+        let Ok(curr_content) = std::fs::read_to_string(&path) else { continue };
+        
+        if prev_content == &curr_content { continue; }
+        
+        let text_diff = TextDiff::from_lines(prev_content, &curr_content);
+        let mut diff_lines = Vec::new();
+        let mut old_line = 1usize;
+        let mut new_line = 1usize;
+        
+        for change in text_diff.iter_all_changes() {
+            let line = change.value().trim_end_matches('\n').to_string();
+            match change.tag() {
+                ChangeTag::Equal => {
+                    diff_lines.push(DiffLine { line_type: "unchanged".into(), line, old_line_num: Some(old_line), new_line_num: Some(new_line) });
+                    old_line += 1;
+                    new_line += 1;
+                }
+                ChangeTag::Delete => {
+                    diff_lines.push(DiffLine { line_type: "removed".into(), line, old_line_num: Some(old_line), new_line_num: None });
+                    old_line += 1;
+                }
+                ChangeTag::Insert => {
+                    diff_lines.push(DiffLine { line_type: "added".into(), line, old_line_num: None, new_line_num: Some(new_line) });
+                    new_line += 1;
+                }
+            }
+        }
+        
+        let relative_path = Path::new(&path).strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| path.clone());
+        
+        diffs.push(FileDiff {
+            path: path.clone(),
+            relative_path,
+            previous: prev_content.clone(),
+            current: curr_content,
+            diff: diff_lines,
+        });
+    }
+    
+    Ok(diffs)
+}
+
+/// Clear the snapshot
+#[tauri::command]
+async fn clear_snapshot(state: State<'_, SnapshotState>) -> Result<(), String> {
+    let mut snapshot = state.snapshot.lock().map_err(|_| "Lock error")?;
+    snapshot.clear();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 
 pub fn run() {
@@ -422,12 +544,13 @@ pub fn run() {
         .setup(|app| {
 
             app.manage(WatcherState { watcher: Mutex::new(None) });
+            app.manage(SnapshotState { snapshot: Mutex::new(HashMap::new()) });
 
             Ok(())
 
         })
 
-        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project, skeletonize_file, skeletonize_files])
+        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project, skeletonize_file, skeletonize_files, count_tokens, count_tokens_for_files, take_snapshot, get_diffs, clear_snapshot])
 
         .run(tauri::generate_context!())
 

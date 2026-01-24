@@ -1,12 +1,7 @@
 import { IFileSystem, FileEntry } from "./FileSystem";
+import { computeDiff, DiffLine } from "../utils/diff";
 
-// Diff-related types
-export interface DiffLine {
-  type: 'added' | 'removed' | 'unchanged';
-  line: string;
-  oldLineNum: number | null;
-  newLineNum: number | null;
-}
+export type { DiffLine };
 
 export interface CellVersion {
   content: string;
@@ -24,22 +19,20 @@ export interface CellDiff {
 
 export class ColabFileSystem implements IFileSystem {
   private cellContentCache: Map<string, string> = new Map();
+  private snapshot: Map<string, CellVersion> = new Map();
 
   async scanProject(_path: string): Promise<FileEntry[]> {
     console.log("Colab: Scanning notebook cells...");
 
     return new Promise((resolve) => {
-      // Check if we are in a Chrome Extension context
       // @ts-ignore
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         // @ts-ignore
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const activeTab = tabs[0];
           if (activeTab && activeTab.id) {
-            console.log("Sending message to content script in tab", activeTab.id);
             // @ts-ignore
             chrome.tabs.sendMessage(activeTab.id, { type: "GET_CELLS" }, (response) => {
-              // Check for Chrome runtime errors
               // @ts-ignore
               if (chrome.runtime.lastError) {
                 // @ts-ignore
@@ -59,6 +52,11 @@ export class ColabFileSystem implements IFileSystem {
                   }
                 });
 
+                // Auto-snapshot on first scan if no snapshot exists
+                if (this.snapshot.size === 0) {
+                  this.takeSnapshotFromCells(response.cells);
+                }
+
                 resolve(response.cells);
               } else if (response && response.error) {
                 console.error("Colab: Error from content script:", response.error);
@@ -69,7 +67,7 @@ export class ColabFileSystem implements IFileSystem {
               }
             });
           } else {
-            console.error("Colab: No active tab found. Make sure you're on a Google Colab page.");
+            console.error("Colab: No active tab found.");
             resolve([]);
           }
         });
@@ -81,17 +79,57 @@ export class ColabFileSystem implements IFileSystem {
   }
 
   async readFileContent(path: string): Promise<string> {
-    const content = this.cellContentCache.get(path);
-    if (content !== undefined) {
-      return content;
-    }
-
-    // Fallback if not in cache (shouldn't happen if scanned first)
-    return `# Error: Content for ${path} not found in cache.\n# Please try refreshing the file list.`;
+    return this.cellContentCache.get(path) ?? `# Error: Content for ${path} not found in cache.`;
   }
 
   async openFolder(): Promise<string | null> {
     return "Google Colab Notebook";
+  }
+
+  private takeSnapshotFromCells(cells: any[]) {
+    const timestamp = Date.now();
+    this.snapshot.clear();
+    cells.forEach((cell: any) => {
+      this.snapshot.set(cell.path, {
+        content: cell.content || "",
+        output: cell.output || "",
+        timestamp
+      });
+    });
+  }
+
+  async takeSnapshot(): Promise<boolean> {
+    console.log("Colab: Taking snapshot...");
+    
+    return new Promise((resolve) => {
+      // @ts-ignore
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        // @ts-ignore
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const activeTab = tabs[0];
+          if (activeTab && activeTab.id) {
+            // @ts-ignore
+            chrome.tabs.sendMessage(activeTab.id, { type: "GET_CELLS" }, (response) => {
+              // @ts-ignore
+              if (chrome.runtime.lastError) {
+                resolve(false);
+                return;
+              }
+              if (response && response.cells) {
+                this.takeSnapshotFromCells(response.cells);
+                resolve(true);
+              } else {
+                resolve(false);
+              }
+            });
+          } else {
+            resolve(false);
+          }
+        });
+      } else {
+        resolve(false);
+      }
+    });
   }
 
   async getDiffs(): Promise<CellDiff[]> {
@@ -105,105 +143,47 @@ export class ColabFileSystem implements IFileSystem {
           const activeTab = tabs[0];
           if (activeTab && activeTab.id) {
             // @ts-ignore
-            chrome.tabs.sendMessage(activeTab.id, { type: "GET_DIFFS" }, (response) => {
+            chrome.tabs.sendMessage(activeTab.id, { type: "GET_CELLS" }, (response) => {
               // @ts-ignore
               if (chrome.runtime.lastError) {
-                // @ts-ignore
-                console.error("Colab: Chrome runtime error:", chrome.runtime.lastError.message);
                 resolve([]);
                 return;
               }
 
-              if (response && response.diffs && Array.isArray(response.diffs)) {
-                console.log("Received diffs from content script", response.diffs.length, "cells with changes");
-                resolve(response.diffs);
-              } else if (response && response.error) {
-                console.error("Colab: Error from content script:", response.error);
-                resolve([]);
+              if (response && response.cells && Array.isArray(response.cells)) {
+                const diffs: CellDiff[] = [];
+                const timestamp = Date.now();
+
+                response.cells.forEach((cell: any) => {
+                  const prev = this.snapshot.get(cell.path);
+                  if (prev && prev.content !== cell.content) {
+                    diffs.push({
+                      path: cell.path,
+                      relative_path: cell.relative_path,
+                      previous: prev,
+                      current: { content: cell.content, output: cell.output || "", timestamp },
+                      diff: computeDiff(prev.content, cell.content)
+                    });
+                  }
+                });
+
+                resolve(diffs);
               } else {
-                console.warn("Colab: No diffs received from content script");
                 resolve([]);
               }
             });
           } else {
-            console.error("Colab: No active tab found");
             resolve([]);
           }
         });
       } else {
-        console.error("Colab: Not running in Chrome extension context");
         resolve([]);
       }
     });
   }
 
-  async takeSnapshot(): Promise<boolean> {
-    console.log("Colab: Taking snapshot...");
-
-    return new Promise((resolve) => {
-      // @ts-ignore
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        // @ts-ignore
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const activeTab = tabs[0];
-          if (activeTab && activeTab.id) {
-            // @ts-ignore
-            chrome.tabs.sendMessage(activeTab.id, { type: "TAKE_SNAPSHOT" }, (response) => {
-              // @ts-ignore
-              if (chrome.runtime.lastError) {
-                // @ts-ignore
-                console.error("Colab: Chrome runtime error:", chrome.runtime.lastError.message);
-                resolve(false);
-                return;
-              }
-
-              if (response && response.success) {
-                console.log("Colab: Snapshot taken successfully");
-                resolve(true);
-              } else {
-                console.error("Colab: Failed to take snapshot");
-                resolve(false);
-              }
-            });
-          } else {
-            resolve(false);
-          }
-        });
-      } else {
-        resolve(false);
-      }
-    });
-  }
-
-  async clearHistory(cellPath?: string): Promise<boolean> {
-    console.log("Colab: Clearing history...", cellPath || "all");
-
-    return new Promise((resolve) => {
-      // @ts-ignore
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        // @ts-ignore
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const activeTab = tabs[0];
-          if (activeTab && activeTab.id) {
-            // @ts-ignore
-            chrome.tabs.sendMessage(activeTab.id, { type: "CLEAR_HISTORY", cellPath }, (response) => {
-              // @ts-ignore
-              if (chrome.runtime.lastError) {
-                // @ts-ignore
-                console.error("Colab: Chrome runtime error:", chrome.runtime.lastError.message);
-                resolve(false);
-                return;
-              }
-
-              resolve(response?.success || false);
-            });
-          } else {
-            resolve(false);
-          }
-        });
-      } else {
-        resolve(false);
-      }
-    });
+  async clearHistory(_cellPath?: string): Promise<boolean> {
+    this.snapshot.clear();
+    return true;
   }
 }

@@ -3,6 +3,7 @@ import { getFileSystem, FileEntry } from "./services/FileSystem";
 import { ColabFileSystem, CellDiff, DiffLine } from "./services/ColabFileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
+import { countTokens } from "./utils/tokenizer";
 import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, Settings, Keyboard, Terminal, GitCompare, Camera, Trash2 } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import "./App.css";
@@ -692,11 +693,30 @@ export default function App() {
                   <div className="flex flex-col gap-1 text-right">
                     <span className="text-[11px] font-bold text-packer-text-muted uppercase">Estimated Tokens</span>
                     <span className="text-2xl font-bold text-packer-blue font-mono">
-                      ~{Math.round(
-                        files.filter(f => tier1Paths.has(f.path)).reduce((acc, f) => acc + (f.size / 4), 0) +
-                        files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).reduce((acc, f) => acc + ((f.size / 4) * 0.3), 0) +
-                        (files.length * 2)
-                      ).toLocaleString()}
+                      {(() => {
+                        const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir && f.content);
+                        const fullFiles = selectedFiles.filter(f => tier1Paths.has(f.path));
+                        const skeletonFiles = selectedFiles.filter(f => !tier1Paths.has(f.path));
+                        
+                        // Overhead: preamble, goal, file tree, headers
+                        let overhead = "";
+                        if (preamble.trim()) overhead += "PREAMBLE\n" + preamble + "\n\n";
+                        if (includeFileTree && files.length > 0) {
+                          overhead += "TREE\n";
+                          files.forEach(f => { overhead += `├─ ${f.relative_path} (${f.size} B, ${f.line_count || 0} lines)\n`; });
+                          overhead += "\n\n";
+                        }
+                        selectedFiles.forEach(f => {
+                          overhead += `FILE ${f.relative_path} ${tier1Paths.has(f.path) ? "FULL" : "SKELETON"}\n\nEND_FILE\n\n`;
+                        });
+                        if (goal.trim()) overhead += "GOAL\n" + goal + "\n";
+                        
+                        const overheadTokens = countTokens(overhead);
+                        const fullTokens = fullFiles.reduce((acc, f) => acc + countTokens(f.content!), 0);
+                        const skeletonTokens = skeletonFiles.reduce((acc, f) => acc + Math.round(countTokens(f.content!) * 0.3), 0);
+                        
+                        return (overheadTokens + fullTokens + skeletonTokens).toLocaleString();
+                      })()}
                     </span>
                   </div>
                 </div>

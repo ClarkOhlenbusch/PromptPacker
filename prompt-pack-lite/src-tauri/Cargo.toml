@@ -42,5 +42,5 @@ tree-sitter-css = "0.23"
 tree-sitter-html = "0.23"
 
 # Tokenizer for accurate token counting
-tiktoken-rs = "0.5"
+tiktoken-rs = "0.9"
 similar = "2.4"

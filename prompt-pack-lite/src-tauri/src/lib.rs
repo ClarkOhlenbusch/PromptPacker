@@ -8,14 +8,20 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
-use tiktoken_rs::cl100k_base;
+use tiktoken_rs::{cl100k_base, CoreBPE};
 use similar::{ChangeTag, TextDiff};
+use once_cell::sync::Lazy;
 
 mod skeleton;
 mod skeleton_legacy;
 
 #[cfg(test)]
 mod skeleton_tests;
+
+// Initialize tokenizer once at startup to avoid blocking on first use
+static TOKENIZER: Lazy<CoreBPE> = Lazy::new(|| {
+    cl100k_base().expect("Failed to load tokenizer")
+});
 
 const IGNORED_DIR_NAMES: &[&str] = &[
     "node_modules",
@@ -414,19 +420,17 @@ async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, Str
 /// Count tokens for given text using cl100k_base encoding (GPT-3.5/4 tokenizer)
 #[tauri::command]
 fn count_tokens(text: String) -> Result<usize, String> {
-    let bpe = cl100k_base().map_err(|e| e.to_string())?;
-    Ok(bpe.encode_with_special_tokens(&text).len())
+    Ok(TOKENIZER.encode_with_special_tokens(&text).len())
 }
 
 /// Count tokens for multiple file paths, reading content from disk
 #[tauri::command]
 async fn count_tokens_for_files(paths: Vec<String>) -> Result<usize, String> {
-    let bpe = cl100k_base().map_err(|e| e.to_string())?;
     let mut total = 0;
     
     for path in paths {
         if let Ok(content) = std::fs::read_to_string(&path) {
-            total += bpe.encode_with_special_tokens(&content).len();
+            total += TOKENIZER.encode_with_special_tokens(&content).len();
         }
     }
     
@@ -530,6 +534,8 @@ async fn clear_snapshot(state: State<'_, SnapshotState>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 
 pub fn run() {
+    // Force tokenizer initialization at startup (downloads vocab on first run)
+    let _ = &*TOKENIZER;
 
     tauri::Builder::default()
 

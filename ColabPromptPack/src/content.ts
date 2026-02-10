@@ -12,6 +12,7 @@ interface Cell {
     output: string;
     size: number;
     line_count: number;
+    cellType?: 'code' | 'markdown';
 }
 
 export { };
@@ -44,6 +45,8 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
     let overlayIframe: HTMLIFrameElement | null = null;
     let cachedCells: Cell[] = [];
     let pendingQuickCopy = false;
+    let pendingCopyAbove = false;
+    let pendingCopyBelow = false;
     let injectedScriptReady = false;
     let pendingCellRequests: boolean[] = [];
     let pendingGetCellsCallbacks: ((response: { cells: Cell[] }) => void)[] = [];
@@ -58,6 +61,15 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
         }
     }
 
+    function requestCellsWithActive() {
+        if (injectedScriptReady) {
+            window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS_WITH_ACTIVE" }, COLAB_ORIGIN);
+        } else {
+            // If not ready yet, fall back to regular cell request
+            pendingCellRequests.push(true);
+        }
+    }
+
     // Inject the Page Script
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('injected.js');
@@ -67,24 +79,36 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
     // Hotkey State
     let quickCopyShortcut: Shortcut = { modifiers: ["Alt", "Shift"], key: "C" };
     let openAppShortcut: Shortcut = { modifiers: ["Alt", "Shift"], key: "P" };
+    let copyAboveShortcut: Shortcut = { modifiers: ["Alt", "Shift"], key: "A" };
+    let copyBelowShortcut: Shortcut = { modifiers: ["Alt", "Shift"], key: "B" };
     let quickCopyIncludesOutput = false;
+    let quickCopyIncludesMarkdown = false;
 
-    chrome.storage.local.get(['quickCopyShortcut', 'openAppShortcut', 'quickCopyIncludesOutput'], (result) => {
+    chrome.storage.local.get(['quickCopyShortcut', 'openAppShortcut', 'copyAboveShortcut', 'copyBelowShortcut', 'quickCopyIncludesOutput', 'quickCopyIncludesMarkdown'], (result) => {
         if (result.quickCopyShortcut) quickCopyShortcut = result.quickCopyShortcut;
         if (result.openAppShortcut) openAppShortcut = result.openAppShortcut;
+        if (result.copyAboveShortcut) copyAboveShortcut = result.copyAboveShortcut;
+        if (result.copyBelowShortcut) copyBelowShortcut = result.copyBelowShortcut;
         if (result.quickCopyIncludesOutput !== undefined) quickCopyIncludesOutput = result.quickCopyIncludesOutput;
+        if (result.quickCopyIncludesMarkdown !== undefined) quickCopyIncludesMarkdown = result.quickCopyIncludesMarkdown;
     });
 
     chrome.storage.onChanged.addListener((changes) => {
         if (changes.quickCopyShortcut) quickCopyShortcut = changes.quickCopyShortcut.newValue;
         if (changes.openAppShortcut) openAppShortcut = changes.openAppShortcut.newValue;
+        if (changes.copyAboveShortcut) copyAboveShortcut = changes.copyAboveShortcut.newValue;
+        if (changes.copyBelowShortcut) copyBelowShortcut = changes.copyBelowShortcut.newValue;
         if (changes.quickCopyIncludesOutput) quickCopyIncludesOutput = changes.quickCopyIncludesOutput.newValue;
+        if (changes.quickCopyIncludesMarkdown) quickCopyIncludesMarkdown = changes.quickCopyIncludesMarkdown.newValue;
     });
 
     window.addEventListener("keydown", (e: KeyboardEvent) => {
         const target = e.target as HTMLElement;
         const tag = target.tagName.toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || target.isContentEditable) return;
+        // Allow shortcuts through for Monaco editor textareas (code cells)
+        // Monaco uses hidden textareas for input — our modifier shortcuts won't conflict with typing
+        const isMonacoEditor = target.closest('.monaco-editor') !== null;
+        if ((tag === 'input' || tag === 'textarea' || target.isContentEditable) && !isMonacoEditor) return;
 
         // Helper to check if a shortcut matches the event
         const matchesShortcut = (shortcut: Shortcut, event: KeyboardEvent) => {
@@ -108,6 +132,16 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
             e.stopPropagation();
             pendingQuickCopy = true;
             requestCells();
+        } else if (matchesShortcut(copyAboveShortcut, e)) {
+            e.preventDefault();
+            e.stopPropagation();
+            pendingCopyAbove = true;
+            requestCellsWithActive();
+        } else if (matchesShortcut(copyBelowShortcut, e)) {
+            e.preventDefault();
+            e.stopPropagation();
+            pendingCopyBelow = true;
+            requestCellsWithActive();
         } else if (matchesShortcut(openAppShortcut, e)) {
             e.preventDefault();
             e.stopPropagation();
@@ -136,6 +170,39 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
             if (pendingQuickCopy) {
                 handleQuickCopy(cachedCells);
                 pendingQuickCopy = false;
+            }
+        } else if (event.data.type === "PROMPTPACK_RESPONSE_CELLS_WITH_ACTIVE") {
+            if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+            const cells: Cell[] = event.data.cells || [];
+            const activeCellIndex: number | null = event.data.activeCellIndex;
+
+            if (activeCellIndex === null) {
+                showToast("No focused cell detected. Click into a cell first.", true);
+                pendingCopyAbove = false;
+                pendingCopyBelow = false;
+                return;
+            }
+
+            if (pendingCopyAbove) {
+                const aboveCells = cells.slice(0, activeCellIndex + 1); // include active cell
+                if (aboveCells.length === 0) {
+                    showToast("No cells above cursor.", true);
+                } else {
+                    copyTextToClipboard(generatePromptString(aboveCells), false);
+                    showToast(`Copied ${aboveCells.length} cell${aboveCells.length > 1 ? 's' : ''} (above + current)`);
+                }
+                pendingCopyAbove = false;
+            }
+
+            if (pendingCopyBelow) {
+                const belowCells = cells.slice(activeCellIndex); // include active cell
+                if (belowCells.length === 0) {
+                    showToast("No cells below cursor.", true);
+                } else {
+                    copyTextToClipboard(generatePromptString(belowCells), false);
+                    showToast(`Copied ${belowCells.length} cell${belowCells.length > 1 ? 's' : ''} (current + below)`);
+                }
+                pendingCopyBelow = false;
             }
         } else if (event.data.type === 'CLOSE_PROMPTPACK') {
             if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
@@ -291,13 +358,21 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
     }
 
     function generatePromptString(cells: Cell[]) {
+        // Filter out markdown cells if not included
+        const filteredCells = cells.filter(cell => {
+            if (cell.cellType === 'markdown' && !quickCopyIncludesMarkdown) return false;
+            return true;
+        });
+
         let output = "### PROJECT STRUCTURE ###\n";
-        cells.forEach(cell => {
-            output += `├─ ${cell.relative_path} (${formatSize(cell.size)}, ${cell.line_count || 0} lines)\n`;
+        filteredCells.forEach(cell => {
+            const typeLabel = cell.cellType === 'markdown' ? ' [Markdown]' : '';
+            output += `├─ ${cell.relative_path}${typeLabel} (${formatSize(cell.size)}, ${cell.line_count || 0} lines)\n`;
         });
         output += "\n\n### FILE CONTENTS ###\n\n";
-        cells.forEach(cell => {
-            output += `##### File: ${cell.relative_path} (FULL) #####\n\`\`\`python\n${cell.content}\n\`\`\`\n`;
+        filteredCells.forEach(cell => {
+            const lang = cell.cellType === 'markdown' ? 'markdown' : 'python';
+            output += `##### File: ${cell.relative_path} (FULL) #####\n\`\`\`${lang}\n${cell.content}\n\`\`\`\n`;
             if (quickCopyIncludesOutput && cell.output && cell.output.trim().length > 0) {
                 output += `\n# Output:\n\`\`\`text\n${cell.output}\n\`\`\`\n`;
             }

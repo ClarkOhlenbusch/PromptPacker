@@ -6,6 +6,7 @@ export interface FileEntry {
   line_count?: number;
   output?: string;
   content?: string; // Cell content (available in Colab extension)
+  cellType?: 'code' | 'markdown'; // Cell type (Colab extension only)
 }
 
 export interface IFileSystem {

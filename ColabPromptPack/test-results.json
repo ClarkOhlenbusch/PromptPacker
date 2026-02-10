@@ -1,0 +1,436 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\clark\\PromptPacker\\ColabPromptPack\\playwright.config.ts",
+    "rootDir": "C:/Users/clark/PromptPacker/ColabPromptPack/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 5
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/clark/PromptPacker/ColabPromptPack/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 5
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/clark/PromptPacker/ColabPromptPack/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 10,
+    "webServer": {
+      "command": "npx http-server . -p 4200",
+      "url": "http://localhost:4200",
+      "reuseExistingServer": true,
+      "stdout": "pipe",
+      "stderr": "pipe"
+    }
+  },
+  "suites": [
+    {
+      "title": "basic-flow.spec.ts",
+      "file": "basic-flow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Basic Extension Flow",
+          "file": "basic-flow.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should scan and list files",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1271,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "Navigating to harness...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Mock Colab Harness Ready\n"
+                        },
+                        {
+                          "text": "Navigation complete.\n"
+                        },
+                        {
+                          "text": "Waiting for iframe...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 1}\n"
+                        },
+                        {
+                          "text": "Iframe visible.\n"
+                        },
+                        {
+                          "text": "Iframe content loaded (Files header visible).\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 2}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 3}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T05:32:48.385Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "450a44780535f532f5a4-fecf8a543ef07a1a9ec0",
+              "file": "basic-flow.spec.ts",
+              "line": 30,
+              "column": 5
+            },
+            {
+              "title": "should select file and generate prompt",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1132,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "Navigating to harness...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Mock Colab Harness Ready\n"
+                        },
+                        {
+                          "text": "Navigation complete.\n"
+                        },
+                        {
+                          "text": "Waiting for iframe...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 1}\n"
+                        },
+                        {
+                          "text": "Iframe visible.\n"
+                        },
+                        {
+                          "text": "Iframe content loaded (Files header visible).\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 2}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 3}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T05:32:48.401Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "450a44780535f532f5a4-0a1a9b6d2a8dfed3bf37",
+              "file": "basic-flow.spec.ts",
+              "line": 46,
+              "column": 5
+            },
+            {
+              "title": "should filtering logic work (include output)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 1521,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "Navigating to harness...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Mock Colab Harness Ready\n"
+                        },
+                        {
+                          "text": "Navigation complete.\n"
+                        },
+                        {
+                          "text": "Waiting for iframe...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 1}\n"
+                        },
+                        {
+                          "text": "Iframe visible.\n"
+                        },
+                        {
+                          "text": "Iframe content loaded (Files header visible).\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 2}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 3}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 4}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T05:32:48.400Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "450a44780535f532f5a4-bc2a618ffb1b687bfc7b",
+              "file": "basic-flow.spec.ts",
+              "line": 72,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "diffing.spec.ts",
+      "file": "diffing.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Diffing Flow",
+          "file": "diffing.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should detect changes and show diffs",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 1721,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BROWSER] log: Mock Colab Harness Ready\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 1}\n"
+                        },
+                        {
+                          "text": "Clicking Scan/Refresh...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 2}\n"
+                        },
+                        {
+                          "text": "Scan clicked. Waiting for Intro.py...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 3}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 4}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 5}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 6}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 7}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 8}\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 9}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T05:32:48.369Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2236d16e51fb06e86f57-6848405846e44b266629",
+              "file": "diffing.spec.ts",
+              "line": 18,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "settings.spec.ts",
+      "file": "settings.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Settings Flow",
+          "file": "settings.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should open settings and toggle options",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 1439,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BROWSER] log: Mock Colab Harness Ready\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_CELLS, requestId: 1}\n"
+                        },
+                        {
+                          "text": "Opening settings...\n"
+                        },
+                        {
+                          "text": "[BROWSER] log: Harness Received: {type: PROMPTPACK_GET_SNAPSHOT, requestId: 2}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T05:32:48.385Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d877ffdf71ec720167ae-a09310ff1e4171035a42",
+              "file": "settings.spec.ts",
+              "line": 18,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-02-10T05:32:46.835Z",
+    "duration": 3616.098,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

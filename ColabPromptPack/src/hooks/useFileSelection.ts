@@ -16,6 +16,7 @@ export interface UseFileSelectionReturn {
     handleSelectAll: () => void;
     handleSetFull: (entry: FileEntry) => void;
     handleGlobalOutputToggle: () => void;
+    handleGlobalMarkdownToggle: () => void;
 }
 
 export function useFileSelection(): UseFileSelectionReturn {
@@ -176,6 +177,31 @@ export function useFileSelection(): UseFileSelectionReturn {
         setIncludeOutputPaths(newSet);
     }, [files, selectedPaths, includeOutputPaths]);
 
+    const handleGlobalMarkdownToggle = useCallback(() => {
+        const markdownFiles = files.filter(f => f.cellType === 'markdown');
+        if (markdownFiles.length === 0) return;
+
+        const allMarkdownSelected = markdownFiles.every(f => selectedPaths.has(f.path));
+
+        const newSelected = new Set(selectedPaths);
+        const newTier1 = new Set(tier1Paths);
+        if (allMarkdownSelected) {
+            // Deselect all markdown cells
+            markdownFiles.forEach(f => {
+                newSelected.delete(f.path);
+                newTier1.delete(f.path);
+            });
+        } else {
+            // Select all markdown cells (as full by default)
+            markdownFiles.forEach(f => {
+                newSelected.add(f.path);
+                newTier1.add(f.path);
+            });
+        }
+        setSelectedPaths(newSelected);
+        setTier1Paths(newTier1);
+    }, [files, selectedPaths, tier1Paths]);
+
     return {
         files,
         selectedPaths,
@@ -191,5 +217,6 @@ export function useFileSelection(): UseFileSelectionReturn {
         handleSelectAll,
         handleSetFull,
         handleGlobalOutputToggle,
+        handleGlobalMarkdownToggle,
     };
 }

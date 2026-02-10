@@ -215,6 +215,25 @@ export default function App() {
                     </span>
                   </button>
 
+                  {fileSelection.files.some(f => f.cellType === 'markdown') && (
+                    <button
+                      onClick={fileSelection.handleGlobalMarkdownToggle}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-all shadow-sm active:scale-95
+                        ${fileSelection.files
+                          .filter(f => f.cellType === 'markdown')
+                          .every(f => fileSelection.selectedPaths.has(f.path))
+                          ? "bg-emerald-100 border-emerald-500 text-emerald-700"
+                          : "bg-white border-slate-200 text-packer-text-muted hover:border-emerald-300 hover:text-emerald-600"
+                        }`}
+                      title="Toggle Markdown Cells"
+                    >
+                      <FileText size={12} strokeWidth={2.5} />
+                      <span className="text-[10px] font-bold uppercase tracking-tight">
+                        MD
+                      </span>
+                    </button>
+                  )}
+
                   <button
                     onClick={diffs.handleViewDiffs}
                     disabled={diffs.loadingDiffs}
@@ -414,12 +433,16 @@ export default function App() {
         <SettingsModal
           quickCopyShortcut={settings.quickCopyShortcut}
           openAppShortcut={settings.openAppShortcut}
+          copyAboveShortcut={settings.copyAboveShortcut}
+          copyBelowShortcut={settings.copyBelowShortcut}
           recordingShortcutType={settings.recordingShortcutType}
           quickCopyIncludesOutput={settings.quickCopyIncludesOutput}
+          quickCopyIncludesMarkdown={settings.quickCopyIncludesMarkdown}
           onClose={() => settings.setShowSettings(false)}
           onKeyDown={settings.handleKeyDown}
           onStartRecording={settings.setRecordingShortcutType}
           onToggleQuickCopyOutput={settings.handleToggleQuickCopyOutput}
+          onToggleQuickCopyMarkdown={settings.handleToggleQuickCopyMarkdown}
         />
       )}
 

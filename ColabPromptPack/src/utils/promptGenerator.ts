@@ -80,6 +80,15 @@ export async function generatePrompt(
     const file = selectedFiles[fileIndex];
     try {
       const content = await fs.readFileContent(file.path);
+
+      // Handle markdown cells differently - no compression/skeletonization
+      if (file.cellType === 'markdown') {
+        output += `FILE ${file.relative_path} MARKDOWN\n`;
+        output += content;
+        output += "\nEND_FILE\n\n";
+        continue;
+      }
+
       const sanitizedFull = sanitizeCellContent(content);
       const sanitized = sanitizeCellContent(content, { pythonComments: true });
       const cellIndex = parseCellIndex(file.relative_path, fileIndex + 1);
@@ -887,8 +896,8 @@ function looksLikeDisabledCode(text: string): boolean {
 
 function shouldKeepComment(commentType: CommentType): boolean {
   return commentType === 'structural' ||
-         commentType === 'explanatory' ||
-         commentType === 'todo';
+    commentType === 'explanatory' ||
+    commentType === 'todo';
 }
 
 function isCommentLine(trimmed: string): boolean {

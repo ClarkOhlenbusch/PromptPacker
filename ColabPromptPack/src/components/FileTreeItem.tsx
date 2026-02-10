@@ -1,4 +1,4 @@
-import { CheckCircle2, FileCode, FolderOpen, Terminal } from "lucide-react";
+import { CheckCircle2, FileCode, FileText, FolderOpen, Terminal } from "lucide-react";
 import { MouseEvent } from "react";
 import { FileEntry } from "../services/FileSystem";
 
@@ -18,6 +18,7 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, includeO
   const isSelected = selectedPaths.has(entry.path);
   const isTier1 = tier1Paths.has(entry.path);
   const includeOutput = includeOutputPaths.has(entry.path);
+  const isMarkdown = entry.cellType === 'markdown';
 
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -60,15 +61,23 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, includeO
 
         {entry.is_dir ?
           <FolderOpen size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} /> :
-          <FileCode size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} />
+          isMarkdown ?
+            <FileText size={18} className={`${isSelected ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} /> :
+            <FileCode size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} />
         }
 
         <span className={`text-sm truncate font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
           {entry.relative_path.split('/').pop()}
         </span>
+
+        {isMarkdown && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-black uppercase tracking-wide flex-shrink-0">
+            MD
+          </span>
+        )}
       </div>
 
-      {!entry.is_dir && isSelected && (
+      {!entry.is_dir && isSelected && !isMarkdown && (
         <div className="flex gap-1 ml-2">
           <button
             onClick={handleOutputClick}

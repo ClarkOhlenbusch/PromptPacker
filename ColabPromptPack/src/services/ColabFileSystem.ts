@@ -29,6 +29,7 @@ interface CellData {
   relative_path: string;
   content: string;
   output?: string;
+  cellType?: 'code' | 'markdown';
 }
 
 /** Incrementing request ID for message correlation */
@@ -151,6 +152,7 @@ export class ColabFileSystem implements IFileSystem {
       line_count: cell.content?.split("\n").length ?? 0,
       content: cell.content,
       output: cell.output,
+      cellType: cell.cellType,
     }));
   }
 

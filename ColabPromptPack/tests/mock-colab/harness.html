@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Colab Harness</title>
+    <style>
+        body { margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+        #colab-mock { flex: 1; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-family: monospace; }
+        #extension-frame { width: 400px; height: 100%; border: none; border-left: 1px solid #ccc; box-shadow: -2px 0 5px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <div id="colab-mock">
+        <div>
+            <h1>Mock Colab Environment</h1>
+            <p>Simulating Google Colab Page Context</p>
+            <div id="status">Waiting for extension...</div>
+            <button id="send-snapshot" style="display:none;">Simulate Snapshot</button>
+        </div>
+    </div>
+    
+    <!-- The Extension Logic (simulating the side panel) -->
+    <iframe id="extension-frame" src="/dist/index.html"></iframe>
+
+    <script>
+        // --- Mock Data ---
+        const MOCK_CELLS = [
+            { path: "cell_1", relative_path: "Intro.py", content: "# Introduction\nprint('Hello World')", output: "Hello World", is_dir: false },
+            { path: "cell_2", relative_path: "Data.py", content: "import pandas as pd\ndf = pd.DataFrame()", is_dir: false },
+            { path: "cell_3", relative_path: "Plot.py", content: "import matplotlib.pyplot as plt\nplt.plot([1,2,3])", output: "<plot>", is_dir: false }
+        ];
+
+        let snapshotCells = [...MOCK_CELLS];
+        let currentCells = [...MOCK_CELLS];
+
+        // --- Message Handling ---
+        const iframe = document.getElementById('extension-frame');
+        const statusDiv = document.getElementById('status');
+
+        window.addEventListener('message', (event) => {
+            // Log for debugging
+            console.log("Harness Received:", event.data);
+
+            if (!event.data || !event.data.type) return;
+
+            const { type, requestId } = event.data;
+
+            // 1. Handshake / Init
+            // The real extension doesn't really handshake, it just starts requesting.
+
+            // 2. GET_CELLS
+            if (type === 'PROMPTPACK_GET_CELLS') {
+                statusDiv.innerText = `Received GET_CELLS (ID: ${requestId})`;
+                
+                // Simulate network delay
+                setTimeout(() => {
+                    iframe.contentWindow.postMessage({
+                        type: 'PROMPTPACK_CELLS_RESPONSE',
+                        requestId: requestId,
+                        payload: { cells: currentCells }
+                    }, '*');
+                }, 100);
+            }
+
+            // 3. TAKE_SNAPSHOT
+            if (type === 'PROMPTPACK_TAKE_SNAPSHOT') {
+                statusDiv.innerText = `Received TAKE_SNAPSHOT (ID: ${requestId})`;
+                snapshotCells = JSON.parse(JSON.stringify(currentCells));
+                
+                setTimeout(() => {
+                    iframe.contentWindow.postMessage({
+                        type: 'PROMPTPACK_SNAPSHOT_RESPONSE',
+                        requestId: requestId,
+                        payload: { success: true, cells: snapshotCells, timestamp: Date.now() }
+                    }, '*');
+                }, 100);
+            }
+
+            // 4. GET_SNAPSHOT
+            if (type === 'PROMPTPACK_GET_SNAPSHOT') {
+                statusDiv.innerText = `Received GET_SNAPSHOT (ID: ${requestId})`;
+                 setTimeout(() => {
+                    iframe.contentWindow.postMessage({
+                        type: 'PROMPTPACK_SNAPSHOT_RESPONSE',
+                        requestId: requestId,
+                        payload: { success: true, cells: snapshotCells, timestamp: Date.now() }
+                    }, '*');
+                }, 50);
+            }
+
+             // 5. COPY_TO_CLIPBOARD
+            if (type === 'COPY_TO_CLIPBOARD') {
+                statusDiv.innerText = `Received COPY_TO_CLIPBOARD`;
+                console.log("Clipboard Content:", event.data.text);
+                // In a real test we might verify this value
+                window.__LAST_COPIED_TEXT__ = event.data.text;
+            }
+        });
+
+        // --- Harness Control API ---
+        // These functions will be called by Playwright to manipulate the mock state
+        window.harness = {
+            updateCells: (newCells) => {
+                currentCells = newCells;
+                statusDiv.innerText = "Harness: Cells Updated";
+            },
+            reset: () => {
+                currentCells = [...MOCK_CELLS];
+                snapshotCells = [...MOCK_CELLS];
+                statusDiv.innerText = "Harness: Reset";
+            },
+            getCells: () => currentCells
+        };
+
+        // Notify that harness is ready
+        console.log("Mock Colab Harness Ready");
+    </script>
+</body>
+</html>

@@ -1,93 +1,210 @@
 # PromptPacker
 
-**Stop pasting code. Start Packing.**
+<p align="center">
+  <img src="./assets/logo.png" alt="PromptPacker" width="120">
+</p>
 
-PromptPacker is a suite of tools designed for **Context Engineering**. It allows you to intelligently select, compress, and format your codebase into high-signal prompts for Large Language Models (LLMs).
+<p align="center">
+  <strong>Stop pasting code. Start Packing.</strong>
+</p>
 
-## Project Ecosystem
+<p align="center">
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-why-promptpacker">Why?</a> •
+  <a href="#-features">Features</a> •
+  <a href="https://promptpacker.dev">Website</a>
+</p>
 
-This repository is a monorepo containing three distinct projects sharing a common core:
+<p align="center">
+  <a href="https://github.com/ClarkOhlenbusch/PromptPacker/releases">
+    <img src="https://img.shields.io/github/v/release/ClarkOhlenbusch/PromptPacker?color=0069C3&style=flat-square" alt="Release">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square" alt="License">
+  </a>
+</p>
 
-### 1. PromptPack Lite (Desktop App)
-A native desktop application that runs 100% locally on your machine.
+---
 
-*   **Location:** `prompt-pack-lite/`
-*   **Tech Stack:** Rust (Tauri v2), React 19, TypeScript, Tailwind CSS.
-*   **Key Features:**
-    *   **Local File Scanning:** Recursively scans directories, respecting `.gitignore` and skipping binary files (images, fonts, etc.).
-    *   **AST Skeletonization:** Uses `tree-sitter` (via Rust) to generate structural summaries (imports, types, function signatures) of your code, reducing token usage by ~70% while keeping context.
-    *   **Auto-Watch:** Automatically detects file changes and refreshes the file tree.
-    *   **Context tiers:**
-        *   **Full:** Includes the entire file content.
-        *   **Skeleton:** Includes only the structural outline.
-    *   **Smart Auto-Fill:** Generates a preamble based on `package.json`, `README.md`, and config files.
+## 🚀 Quick Start
 
-### 2. PromptPack Colab (Browser Extension)
-A Chrome/Browser extension that brings the PromptPack interface directly into Google Colab notebooks.
+### macOS (Apple Silicon)
+```bash
+curl -L https://github.com/ClarkOhlenbusch/PromptPacker/releases/latest/download/prompt-pack-lite_aarch64.dmg -o PromptPacker.dmg
+open PromptPacker.dmg
+```
 
-*   **Location:** `ColabPromptPack/`
-*   **Tech Stack:** React 19, Vite, Chrome Manifest V3.
-*   **Key Features:**
-    *   **DOM Scraping Adapter:** Uses a custom `ColabFileSystem` adapter to treat Notebook Cells as "files".
-    *   **Diff Tracking:** Automatically tracks changes made to cells since the last scan/snapshot.
-    *   **Visual Diffs:** View side-by-side diffs of your code changes before packing them.
-    *   **Snapshotting:** Take snapshots of the notebook state to manage history during a session.
-    *   **Quick Copy:** Global hotkeys (customizable) to copy the entire notebook context instantly.
+### Other Platforms
+Download the latest release for your OS from [GitHub Releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases).
 
-### 3. PromptPack Site (Landing Page)
-The marketing and distribution website.
+**Or visit [promptpacker.dev](https://promptpacker.dev)** for auto-detected downloads.
 
-*   **Location:** `prompt-pack-site/`
-*   **Tech Stack:** React 19, Vite, Tailwind CSS.
-*   **Features:**
-    *   Auto-detects latest release from GitHub API.
-    *   Provides download links for macOS (Apple Silicon/Intel).
+---
 
-## Architecture
+## 🤔 Why PromptPacker?
 
-The project uses a **Hexagonal Architecture** approach on the frontend to share UI logic between the Desktop and Extension versions.
+You know that thing where you copy-paste 47 files into ChatGPT and hope it understands your codebase?
 
-*   **`FileSystem` Interface:** A shared abstraction that defines how the app reads data.
-    *   **Desktop:** Calls Rust `tauri::command` (`scan_project`, `read_file_content`).
-    *   **Extension:** Uses `window.postMessage` to query the `content.js` script which scrapes the DOM.
+Yeah, we fixed that.
 
-## Development
+**PromptPacker** is a context engineering toolkit that intelligently selects, compresses, and formats your code for LLMs. It understands *structure*, not just text.
+
+### The Problem
+
+- Most files you paste are noise (node_modules, build artifacts, images)
+- Full file contents waste tokens on implementation details
+- You lose track of what you already shared
+- Browser-based AI tools have no concept of "your project"
+
+### The Solution
+
+- **Smart Scanning** — Respects `.gitignore`, skips binaries automatically
+- **AST Skeletonization** — 70% fewer tokens, same structural understanding
+- **Context Tiers** — Full code, skeleton, or omit entirely
+- **Auto-Watch** — Your context stays current as you code
+
+---
+
+## ✨ Features
+
+### 🖥️ PromptPack Lite (Desktop App)
+
+A native desktop app that runs **100% locally**. No cloud, no tracking.
+
+| Feature | Description |
+|---------|-------------|
+| **Local File Scanning** | Recursively scans directories, respects `.gitignore` |
+| **AST Skeletonization** | Tree-sitter powered structural summaries — imports, types, signatures |
+| **Auto-Watch** | Detects file changes, refreshes automatically |
+| **Context Tiers** | Full → Skeleton → Omit |
+| **Smart Preamble** | Auto-generates context from `package.json`, `README.md`, config files |
+
+**Tech Stack:** Rust (Tauri v2), React 19, TypeScript, Tailwind CSS
+
+---
+
+### 🧩 PromptPack Colab (Browser Extension)
+
+Bring PromptPacker into your Google Colab workflow.
+
+| Feature | Description |
+|---------|-------------|
+| **DOM Scraping Adapter** | Treats Colab cells as "files" |
+| **Diff Tracking** | See what changed since your last snapshot |
+| **Visual Diffs** | Side-by-side before packing |
+| **Quick Copy** | Global hotkeys to grab entire notebook context |
+
+**Tech Stack:** React 19, Vite, Chrome Manifest V3
+
+---
+
+### 🌐 PromptPack Site
+
+Marketing site with auto-updating downloads from GitHub Releases.
+
+**Live at:** [promptpacker.dev](https://promptpacker.dev)
+
+---
+
+## 📸 Screenshots
+
+<p align="center">
+  <i>Screenshots coming soon — see <a href="https://promptpacker.dev">promptpacker.dev</a> for live demo</i>
+</p>
+
+---
+
+## 🏗️ Architecture
+
+PromptPacker uses **Hexagonal Architecture** to share UI logic between Desktop and Extension:
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   Desktop App   │     │   Extension     │
+│   (Tauri/Rust)  │     │   (Chrome API)  │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         └───────────┬───────────┘
+                     │
+         ┌───────────▼───────────┐
+         │  FileSystem Interface │  ← Shared abstraction
+         │  (scan, read, watch)  │
+         └───────────┬───────────┘
+                     │
+         ┌───────────▼───────────┐
+         │      Core Logic       │
+         │   (React + TS)        │
+         └───────────────────────┘
+```
+
+---
+
+## 🔮 Roadmap
+
+- [x] Desktop app (macOS)
+- [x] Browser extension (Colab)
+- [x] Landing page
+- [ ] Windows & Linux builds
+- [ ] **PromptPack Heavy** — Local SLM for semantic code summarization
+- [ ] VS Code extension
+- [ ] JetBrains plugin
+
+---
+
+## 🛠️ Development
 
 ### Prerequisites
-*   Node.js (v18+)
-*   Rust (latest stable) for Desktop App
 
-### Building the Desktop App
+- Node.js (v18+)
+- Rust (latest stable) — for Desktop App
+
+### Desktop App
+
 ```bash
 cd prompt-pack-lite
 npm install
-npm run tauri dev   # Run in development mode
-npm run tauri build # Build release binary
+npm run tauri dev      # Development
+npm run tauri build    # Production build
 ```
 
-### Building the Extension
+### Browser Extension
+
 ```bash
 cd ColabPromptPack
 npm install
 npm run build
-# Load the 'dist' folder as an unpacked extension in Chrome/Edge.
+# Load 'dist' folder as unpacked extension in Chrome
 ```
 
-### Running the Site
+### Landing Page
+
 ```bash
 cd prompt-pack-site
 npm install
 npm run dev
 ```
 
-## Future Plans (PromptPack Heavy)
-A planned "Heavy" version will introduce a local Small Language Model (SLM) to perform semantic summarization of code files, moving beyond AST skeletonization to true "AI-reading" of files.
+---
+
+## 📄 License
+
+Apache License 2.0 — see [LICENSE](./LICENSE)
 
 ---
 
-## License
+## 🙏 Acknowledgments
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Built with:
+- [Tauri](https://tauri.app) — Rust-based desktop framework
+- [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) — Parsing wizardry
+- [React](https://react.dev) — UI that doesn't fight you
 
 ---
-© 2025 PromptPacker
+
+<p align="center">
+  <strong>Made with ☕ and 🦀</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ClarkOhlenbusch">@ClarkOhlenbusch</a>
+</p>

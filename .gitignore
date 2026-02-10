@@ -7,3 +7,4 @@ dist
 target/
 src-tauri/target/
 **/*.log
+prompt-pack-lite/nul

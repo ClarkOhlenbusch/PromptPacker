@@ -144,7 +144,7 @@ PromptPacker uses **Hexagonal Architecture** to share UI logic between Desktop a
 - [x] Desktop app (macOS)
 - [x] Browser extension (Colab)
 - [x] Landing page
-- [ ] Windows & Linux builds
+- [x] Windows & Linux builds
 - [ ] **PromptPack Heavy** — Local SLM for semantic code summarization
 - [ ] VS Code extension
 - [ ] JetBrains plugin

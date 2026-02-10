@@ -8,6 +8,7 @@ export default {
     extend: {
       colors: {
         'packer-blue': '#0069C3',
+        'packer-blue-dark': '#005a9e',
         'packer-grey': '#2A3947',
         'packer-border': '#E8EDF2',
         'packer-text-muted': '#5B6A78',

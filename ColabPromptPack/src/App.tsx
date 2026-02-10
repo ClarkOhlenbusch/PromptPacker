@@ -40,7 +40,47 @@ export default function App() {
   // Auto-scan on mount
   useEffect(() => {
     fileSelection.handleOpenFolder();
+    // Try to focus the window so local keys work immediately
+    window.focus();
   }, []);
+
+  // Global ESC key listener
+  useEffect(() => {
+    const handleEscapeAction = () => {
+      // Priority: Close modals first, then close application
+      if (diffs.showDiffModal) {
+        diffs.setShowDiffModal(false);
+      } else if (showOutput) {
+        setShowOutput(false);
+      } else if (settings.showSettings) {
+        settings.setShowSettings(false);
+        if (settings.recordingShortcutType) {
+          settings.setRecordingShortcutType(null);
+        }
+      } else {
+        handleCloseOverlay();
+      }
+    };
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleEscapeAction();
+      }
+    };
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data.type === "EXTERNAL_ESCAPE") {
+        handleEscapeAction();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [diffs, showOutput, settings, handleCloseOverlay]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -98,7 +138,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-white text-packer-grey flex flex-col font-sans relative selection:bg-[#0069C3] selection:text-white">
+    <div className="h-screen w-screen bg-white text-packer-grey flex flex-col font-sans relative selection:bg-packer-blue selection:text-white">
       {/* Overlay Close Button */}
       <div className="absolute top-0 right-0 p-2 z-50">
         <button
@@ -300,7 +340,7 @@ export default function App() {
                       <button
                         onClick={handleAutoFill}
                         disabled={generating}
-                        className="text-[10px] font-bold text-packer-blue hover:text-[#005a9e] flex items-center gap-1 uppercase tracking-wide transition-colors"
+                        className="text-[10px] font-bold text-packer-blue hover:text-packer-blue-dark flex items-center gap-1 uppercase tracking-wide transition-colors"
                       >
                         <Wand2 size={12} /> Auto-Fill
                       </button>
@@ -356,7 +396,7 @@ export default function App() {
             <button
               onClick={handleGenerate}
               disabled={generating || fileSelection.selectedPaths.size === 0}
-              className="px-8 py-3 bg-[#0069C3] hover:bg-[#1a252f] disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-bold tracking-wide text-white transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 transform active:scale-[0.98]"
+              className="px-8 py-3 bg-packer-blue hover:bg-[#1a252f] disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-bold tracking-wide text-white transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 transform active:scale-[0.98]"
             >
               {generating ? (
                 <RefreshCw className="animate-spin" size={18} />
@@ -372,12 +412,13 @@ export default function App() {
       {/* Modals */}
       {settings.showSettings && (
         <SettingsModal
-          currentShortcut={settings.currentShortcut}
-          isRecording={settings.isRecording}
+          quickCopyShortcut={settings.quickCopyShortcut}
+          openAppShortcut={settings.openAppShortcut}
+          recordingShortcutType={settings.recordingShortcutType}
           quickCopyIncludesOutput={settings.quickCopyIncludesOutput}
           onClose={() => settings.setShowSettings(false)}
           onKeyDown={settings.handleKeyDown}
-          onStartRecording={() => settings.setIsRecording(true)}
+          onStartRecording={settings.setRecordingShortcutType}
           onToggleQuickCopyOutput={settings.handleToggleQuickCopyOutput}
         />
       )}

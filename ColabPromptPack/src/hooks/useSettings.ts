@@ -8,9 +8,10 @@ export interface ShortcutConfig {
 export interface UseSettingsReturn {
     showSettings: boolean;
     setShowSettings: (show: boolean) => void;
-    currentShortcut: ShortcutConfig | null;
-    isRecording: boolean;
-    setIsRecording: (recording: boolean) => void;
+    quickCopyShortcut: ShortcutConfig | null;
+    openAppShortcut: ShortcutConfig | null;
+    recordingShortcutType: 'quickCopy' | 'openApp' | null;
+    setRecordingShortcutType: (type: 'quickCopy' | 'openApp' | null) => void;
     quickCopyIncludesOutput: boolean;
     handleKeyDown: (e: React.KeyboardEvent) => void;
     handleToggleQuickCopyOutput: () => void;
@@ -18,21 +19,29 @@ export interface UseSettingsReturn {
 
 export function useSettings(): UseSettingsReturn {
     const [showSettings, setShowSettings] = useState(false);
-    const [currentShortcut, setCurrentShortcut] = useState<ShortcutConfig | null>(null);
-    const [isRecording, setIsRecording] = useState(false);
+    const [quickCopyShortcut, setQuickCopyShortcut] = useState<ShortcutConfig | null>(null);
+    const [openAppShortcut, setOpenAppShortcut] = useState<ShortcutConfig | null>(null);
+    const [recordingShortcutType, setRecordingShortcutType] = useState<'quickCopy' | 'openApp' | null>(null);
     const [quickCopyIncludesOutput, setQuickCopyIncludesOutput] = useState(false);
 
     // Load settings from chrome.storage on mount
     useEffect(() => {
         if (typeof chrome !== "undefined" && chrome.storage) {
             chrome.storage.local.get(
-                ["quickCopyShortcut", "quickCopyIncludesOutput"],
+                ["quickCopyShortcut", "openAppShortcut", "quickCopyIncludesOutput"],
                 (result) => {
                     if (result.quickCopyShortcut) {
-                        setCurrentShortcut(result.quickCopyShortcut);
+                        setQuickCopyShortcut(result.quickCopyShortcut);
                     } else {
-                        setCurrentShortcut({ modifiers: ["Alt", "Shift"], key: "C" });
+                        setQuickCopyShortcut({ modifiers: ["Alt", "Shift"], key: "C" });
                     }
+
+                    if (result.openAppShortcut) {
+                        setOpenAppShortcut(result.openAppShortcut);
+                    } else {
+                        setOpenAppShortcut({ modifiers: ["Alt", "Shift"], key: "P" });
+                    }
+
                     if (result.quickCopyIncludesOutput !== undefined) {
                         setQuickCopyIncludesOutput(result.quickCopyIncludesOutput);
                     }
@@ -43,7 +52,7 @@ export function useSettings(): UseSettingsReturn {
 
     const handleKeyDown = useCallback(
         (e: React.KeyboardEvent) => {
-            if (!isRecording) return;
+            if (!recordingShortcutType) return;
             e.preventDefault();
             e.stopPropagation();
 
@@ -60,15 +69,22 @@ export function useSettings(): UseSettingsReturn {
                 modifiers,
                 key: e.key.toUpperCase(),
             };
-            setCurrentShortcut(newShortcut);
-            setIsRecording(false);
 
-            // Persist to chrome.storage
-            if (typeof chrome !== "undefined" && chrome.storage) {
-                chrome.storage.local.set({ quickCopyShortcut: newShortcut });
+            if (recordingShortcutType === 'quickCopy') {
+                setQuickCopyShortcut(newShortcut);
+                if (typeof chrome !== "undefined" && chrome.storage) {
+                    chrome.storage.local.set({ quickCopyShortcut: newShortcut });
+                }
+            } else if (recordingShortcutType === 'openApp') {
+                setOpenAppShortcut(newShortcut);
+                if (typeof chrome !== "undefined" && chrome.storage) {
+                    chrome.storage.local.set({ openAppShortcut: newShortcut });
+                }
             }
+
+            setRecordingShortcutType(null);
         },
-        [isRecording]
+        [recordingShortcutType]
     );
 
     const handleToggleQuickCopyOutput = useCallback(() => {
@@ -84,9 +100,10 @@ export function useSettings(): UseSettingsReturn {
     return {
         showSettings,
         setShowSettings,
-        currentShortcut,
-        isRecording,
-        setIsRecording,
+        quickCopyShortcut,
+        openAppShortcut,
+        recordingShortcutType,
+        setRecordingShortcutType,
         quickCopyIncludesOutput,
         handleKeyDown,
         handleToggleQuickCopyOutput,

@@ -2,18 +2,20 @@ import { Settings, Keyboard, Terminal, X } from "lucide-react";
 import { ShortcutConfig } from "../hooks/useSettings";
 
 interface SettingsModalProps {
-    currentShortcut: ShortcutConfig | null;
-    isRecording: boolean;
+    quickCopyShortcut: ShortcutConfig | null;
+    openAppShortcut: ShortcutConfig | null;
+    recordingShortcutType: 'quickCopy' | 'openApp' | null;
     quickCopyIncludesOutput: boolean;
     onClose: () => void;
     onKeyDown: (e: React.KeyboardEvent) => void;
-    onStartRecording: () => void;
+    onStartRecording: (type: 'quickCopy' | 'openApp') => void;
     onToggleQuickCopyOutput: () => void;
 }
 
 export function SettingsModal({
-    currentShortcut,
-    isRecording,
+    quickCopyShortcut,
+    openAppShortcut,
+    recordingShortcutType,
     quickCopyIncludesOutput,
     onClose,
     onKeyDown,
@@ -43,7 +45,47 @@ export function SettingsModal({
 
                 {/* Content */}
                 <div className="p-8 space-y-6">
-                    {/* Shortcut Recorder */}
+                    {/* Open App Shortcut Recorder */}
+                    <div className="space-y-2">
+                        <label className="text-sm font-bold text-packer-grey flex items-center gap-2">
+                            <Keyboard size={16} /> Open App Shortcut
+                        </label>
+                        <p className="text-xs text-packer-text-muted">
+                            Global hotkey to open/close the PromptPacker overlay.
+                        </p>
+
+                        <div
+                            className={`mt-2 p-4 border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all ${recordingShortcutType === 'openApp'
+                                ? "border-packer-blue bg-blue-50 text-packer-blue"
+                                : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                                }`}
+                            onClick={() => onStartRecording('openApp')}
+                            onKeyDown={onKeyDown}
+                            tabIndex={0}
+                        >
+                            {recordingShortcutType === 'openApp' ? (
+                                <span className="font-mono font-bold animate-pulse">
+                                    Press keys...
+                                </span>
+                            ) : (
+                                <div className="flex gap-2">
+                                    {openAppShortcut?.modifiers.map((m) => (
+                                        <kbd
+                                            key={m}
+                                            className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm"
+                                        >
+                                            {m}
+                                        </kbd>
+                                    ))}
+                                    <kbd className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm">
+                                        {openAppShortcut?.key}
+                                    </kbd>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Quick Copy Shortcut Recorder */}
                     <div className="space-y-2">
                         <label className="text-sm font-bold text-packer-grey flex items-center gap-2">
                             <Keyboard size={16} /> Quick Copy Shortcut
@@ -53,21 +95,21 @@ export function SettingsModal({
                         </p>
 
                         <div
-                            className={`mt-2 p-4 border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all ${isRecording
-                                    ? "border-packer-blue bg-blue-50 text-packer-blue"
-                                    : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                            className={`mt-2 p-4 border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all ${recordingShortcutType === 'quickCopy'
+                                ? "border-packer-blue bg-blue-50 text-packer-blue"
+                                : "border-slate-200 bg-slate-50 hover:border-slate-300"
                                 }`}
-                            onClick={onStartRecording}
+                            onClick={() => onStartRecording('quickCopy')}
                             onKeyDown={onKeyDown}
                             tabIndex={0}
                         >
-                            {isRecording ? (
+                            {recordingShortcutType === 'quickCopy' ? (
                                 <span className="font-mono font-bold animate-pulse">
                                     Press keys...
                                 </span>
                             ) : (
                                 <div className="flex gap-2">
-                                    {currentShortcut?.modifiers.map((m) => (
+                                    {quickCopyShortcut?.modifiers.map((m) => (
                                         <kbd
                                             key={m}
                                             className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm"
@@ -76,17 +118,17 @@ export function SettingsModal({
                                         </kbd>
                                     ))}
                                     <kbd className="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-xs font-bold shadow-sm">
-                                        {currentShortcut?.key}
+                                        {quickCopyShortcut?.key}
                                     </kbd>
                                 </div>
                             )}
                         </div>
-                        {isRecording && (
+                        {recordingShortcutType && (
                             <p className="text-xs text-center text-packer-blue mt-1">
                                 Focus box and press key combo
                             </p>
                         )}
-                        {!isRecording && (
+                        {!recordingShortcutType && (
                             <p className="text-[10px] text-center text-packer-text-muted mt-1">
                                 Click to record new shortcut
                             </p>
@@ -107,7 +149,7 @@ export function SettingsModal({
                             <button
                                 onClick={onToggleQuickCopyOutput}
                                 className={`w-12 h-6 rounded-full relative transition-all duration-200 focus:outline-none shadow-inner
-                  ${quickCopyIncludesOutput ? "bg-[#0069C3]" : "bg-slate-300"}`}
+                  ${quickCopyIncludesOutput ? "bg-packer-blue" : "bg-slate-300"}`}
                             >
                                 <div
                                     className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 shadow-md border border-slate-100 ${quickCopyIncludesOutput ? "left-7" : "left-1"

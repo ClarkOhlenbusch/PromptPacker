@@ -43,35 +43,54 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
 
   // Hotkey State
   let quickCopyShortcut = { modifiers: ["Alt", "Shift"], key: "C" };
+  let openAppShortcut = { modifiers: ["Alt", "Shift"], key: "P" };
   let quickCopyIncludesOutput = false;
 
-  chrome.storage.local.get(['quickCopyShortcut', 'quickCopyIncludesOutput'], (result) => {
+  chrome.storage.local.get(['quickCopyShortcut', 'openAppShortcut', 'quickCopyIncludesOutput'], (result) => {
     if (result.quickCopyShortcut) quickCopyShortcut = result.quickCopyShortcut;
+    if (result.openAppShortcut) openAppShortcut = result.openAppShortcut;
     if (result.quickCopyIncludesOutput !== undefined) quickCopyIncludesOutput = result.quickCopyIncludesOutput;
   });
 
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.quickCopyShortcut) quickCopyShortcut = changes.quickCopyShortcut.newValue;
+    if (changes.openAppShortcut) openAppShortcut = changes.openAppShortcut.newValue;
     if (changes.quickCopyIncludesOutput) quickCopyIncludesOutput = changes.quickCopyIncludesOutput.newValue;
   });
 
   window.addEventListener("keydown", (e) => {
     const tag = e.target.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
-    if (!quickCopyShortcut) return;
 
-    const pressedKey = e.key.toUpperCase();
-    const requiredKey = quickCopyShortcut.key.toUpperCase();
-    const alt = quickCopyShortcut.modifiers.includes("Alt");
-    const shift = quickCopyShortcut.modifiers.includes("Shift");
-    const modMeta = quickCopyShortcut.modifiers.includes("Meta") || quickCopyShortcut.modifiers.includes("Command");
-    const modCtrl = quickCopyShortcut.modifiers.includes("Control") || quickCopyShortcut.modifiers.includes("Ctrl");
+    // Helper to check if a shortcut matches the event
+    const matchesShortcut = (shortcut, event) => {
+      if (!shortcut) return false;
+      const pressedKey = event.key.toUpperCase();
+      const requiredKey = shortcut.key.toUpperCase();
+      const alt = shortcut.modifiers.includes("Alt");
+      const shift = shortcut.modifiers.includes("Shift");
+      const modMeta = shortcut.modifiers.includes("Meta") || shortcut.modifiers.includes("Command");
+      const modCtrl = shortcut.modifiers.includes("Control") || shortcut.modifiers.includes("Ctrl");
 
-    if (modMeta === e.metaKey && modCtrl === e.ctrlKey && alt === e.altKey && shift === e.shiftKey && pressedKey === requiredKey) {
+      return modMeta === event.metaKey &&
+        modCtrl === event.ctrlKey &&
+        alt === event.altKey &&
+        shift === event.shiftKey &&
+        pressedKey === requiredKey;
+    };
+
+    if (matchesShortcut(quickCopyShortcut, e)) {
       e.preventDefault();
       e.stopPropagation();
       pendingQuickCopy = true;
       requestCells();
+    } else if (matchesShortcut(openAppShortcut, e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleOverlay();
+    } else if (e.key === "Escape" && overlayIframe) {
+      // Forward ESC to iframe if it's open
+      overlayIframe.contentWindow.postMessage({ type: "EXTERNAL_ESCAPE" }, "*");
     }
   });
 

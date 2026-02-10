@@ -1,12 +1,6 @@
 import { CheckCircle2, FileCode, FolderOpen } from "lucide-react";
 import { MouseEvent } from "react";
-
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-}
+import { FileEntry } from "../services/FileSystem";
 
 interface FileTreeItemProps {
   entry: FileEntry;

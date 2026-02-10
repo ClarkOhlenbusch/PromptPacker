@@ -60,7 +60,7 @@ export function OutputModal({
                         </button>
                         <button
                             onClick={onCopy}
-                            className="px-8 py-2.5 bg-[#0069C3] hover:bg-[#1a252f] rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-blue-500/20 transition transform active:scale-[0.98]"
+                            className="px-8 py-2.5 bg-packer-blue hover:bg-[#1a252f] rounded font-bold text-white flex items-center gap-2 shadow-lg shadow-blue-500/20 transition transform active:scale-[0.98]"
                         >
                             {copied ? (
                                 <CheckCircle2 size={18} strokeWidth={2.5} />

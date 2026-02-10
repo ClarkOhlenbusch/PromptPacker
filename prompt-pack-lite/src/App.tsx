@@ -7,15 +7,8 @@ import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
 import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, GitCompare, Camera, Trash2 } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
+import { FileEntry } from "./services/FileSystem";
 import "./App.css";
-
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-  line_count?: number;
-}
 
 interface DiffLine {
   type: 'added' | 'removed' | 'unchanged';
@@ -130,7 +123,7 @@ export default function App() {
     const fullPaths = files.filter(f => tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
     const skeletonPaths = files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
     const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir);
-    
+
     if (selectedFiles.length === 0 && !preamble.trim() && !goal.trim()) {
       setTokenCount(0);
       return;
@@ -143,37 +136,37 @@ export default function App() {
       try {
         // Build overhead text (headers, file tree, formatting)
         let overhead = "";
-        
+
         if (preamble.trim()) {
           overhead += "PREAMBLE\n" + preamble + "\n\n";
         }
-        
+
         if (includeFileTree && files.length > 0) {
           overhead += "TREE\n";
           // Estimate tree: ~50 chars per file entry on average
           overhead += files.map(f => `├─ ${f.relative_path} (${f.size} B, ${f.line_count || 0} lines)\n`).join("");
           overhead += "\n\n";
         }
-        
+
         // Add file headers/footers
         selectedFiles.forEach(f => {
           const isFull = tier1Paths.has(f.path);
           overhead += `FILE ${f.relative_path} ${isFull ? "FULL" : "SKELETON"}\n`;
           overhead += "\nEND_FILE\n\n";
         });
-        
+
         if (goal.trim()) {
           overhead += "GOAL\n" + goal + "\n";
         }
-        
-        const overheadTokens: number = overhead.length > 0 
+
+        const overheadTokens: number = overhead.length > 0
           ? await invoke("count_tokens", { text: overhead })
           : 0;
 
-        const fullTokens: number = fullPaths.length > 0 
+        const fullTokens: number = fullPaths.length > 0
           ? await invoke("count_tokens_for_files", { paths: fullPaths })
           : 0;
-        
+
         // For skeleton files, count full tokens then apply 30% estimate
         const skeletonFullTokens: number = skeletonPaths.length > 0
           ? await invoke("count_tokens_for_files", { paths: skeletonPaths })
@@ -618,7 +611,7 @@ export default function App() {
                       <button
                         onClick={handleAutoFill}
                         disabled={generating}
-                        className="text-[10px] font-bold text-packer-blue hover:text-[#005a9e] flex items-center gap-1 uppercase tracking-wide transition-colors"
+                        className="text-[10px] font-bold text-packer-blue hover:text-packer-blue-dark flex items-center gap-1 uppercase tracking-wide transition-colors"
                       >
                         <Wand2 size={12} /> Auto-Fill
                       </button>

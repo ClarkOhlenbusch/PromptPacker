@@ -1,12 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-  line_count?: number;
-}
+import { FileEntry } from "../services/FileSystem";
 
 // Result from Rust skeleton extraction
 interface SkeletonResult {

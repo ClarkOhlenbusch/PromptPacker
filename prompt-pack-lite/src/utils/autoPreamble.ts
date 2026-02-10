@@ -1,11 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-
-interface FileEntry {
-  path: string;
-  relative_path: string;
-  is_dir: boolean;
-  size: number;
-}
+import { FileEntry } from "../services/FileSystem";
 
 export async function generateAutoPreamble(files: FileEntry[]): Promise<string> {
   const parts: string[] = [];
@@ -28,7 +22,7 @@ export async function generateAutoPreamble(files: FileEntry[]): Promise<string> 
 
 async function scanManifests(rootFiles: FileEntry[]): Promise<string | null> {
   let output = "";
-  
+
   // Package.json (Node/JS)
   const pkgJson = rootFiles.find(f => f.relative_path === 'package.json');
   if (pkgJson) {
@@ -105,7 +99,7 @@ async function scanReadme(rootFiles: FileEntry[]): Promise<string | null> {
   try {
     const content = await invoke<string>("read_file_content", { path: readme.path });
     const lines = content.split('\n');
-    
+
     // 1. Try to find an architecture diagram or specific header
     let startIdx = -1;
     let endIdx = -1;
@@ -114,8 +108,8 @@ async function scanReadme(rootFiles: FileEntry[]): Promise<string | null> {
       const line = lines[i];
       // Detect common architecture headers or ASCII boxes
       if (
-        line.toLowerCase().includes('architecture') || 
-        line.toLowerCase().includes('flow') || 
+        line.toLowerCase().includes('architecture') ||
+        line.toLowerCase().includes('flow') ||
         line.includes('┌') || line.includes('╔')
       ) {
         startIdx = i;
@@ -126,17 +120,17 @@ async function scanReadme(rootFiles: FileEntry[]): Promise<string | null> {
     if (startIdx !== -1) {
       // Find the end of the block (empty line or next header)
       for (let j = startIdx + 1; j < lines.length && j < startIdx + 25; j++) {
-        if (lines[j].trim() === '' && lines[j+1]?.trim() === '') {
-           endIdx = j;
-           break;
+        if (lines[j].trim() === '' && lines[j + 1]?.trim() === '') {
+          endIdx = j;
+          break;
         }
         if (lines[j].startsWith('#') && j > startIdx + 5) {
-           endIdx = j;
-           break;
+          endIdx = j;
+          break;
         }
         endIdx = j;
       }
-      
+
       const diagramBlock = lines.slice(Math.max(0, startIdx - 1), endIdx).join('\n');
       return `Project Context:\n${diagramBlock}`;
     }

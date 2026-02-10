@@ -1,12 +1,12 @@
 {
   "name": "prompt-pack-colab",
   "private": true,
-  "version": "0.1.0",
+  "version": "%npm_config_ver%",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "package": "npm run build && powershell -Command \"Compress-Archive -Path dist/* -DestinationPath ..\\PromptPackColab-chrome.zip -Force\"",
+    "package": "node scripts/version.js --ver=%npm_config_ver% && npm run build && node scripts/package.js",
     "preview": "vite preview",
     "test": "vitest"
   },
@@ -26,6 +26,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "archiver": "^7.0.1",
     "autoprefixer": "^10.4.23",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.6",

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PromptPack Colab",
-  "version": "0.1.0",
+  "version": "%npm_config_ver%",
   "description": "Pack Google Colab cells into AI prompts.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -31,15 +31,25 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://colab.research.google.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://colab.research.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["index.html", "assets/*", "injected.js"],
-      "matches": ["https://colab.research.google.com/*"]
+      "resources": [
+        "index.html",
+        "assets/*",
+        "injected.js"
+      ],
+      "matches": [
+        "https://colab.research.google.com/*"
+      ]
     }
   ],
   "commands": {

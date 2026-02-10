@@ -1,16 +1,18 @@
 use serde::{Serialize, Deserialize};
 use ignore::WalkBuilder;
 use std::collections::{HashSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs::File;
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{State, Emitter, Manager};
 use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
 use tiktoken_rs::{cl100k_base, CoreBPE};
 use similar::{ChangeTag, TextDiff};
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
 
 mod skeleton;
 mod skeleton_legacy;
@@ -22,6 +24,25 @@ mod skeleton_tests;
 static TOKENIZER: Lazy<CoreBPE> = Lazy::new(|| {
     cl100k_base().expect("Failed to load tokenizer")
 });
+
+#[derive(Clone, Copy)]
+struct TokenCacheEntry {
+    file_size: u64,
+    modified_unix_nanos: u128,
+    token_count: usize,
+}
+
+#[derive(Clone)]
+struct SkeletonCacheEntry {
+    file_size: u64,
+    modified_unix_nanos: u128,
+    result: SkeletonResult,
+}
+
+static TOKEN_COUNT_CACHE: Lazy<Mutex<HashMap<String, TokenCacheEntry>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+static SKELETON_CACHE: Lazy<Mutex<HashMap<String, SkeletonCacheEntry>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 const IGNORED_DIR_NAMES: &[&str] = &[
     "node_modules",
@@ -88,12 +109,69 @@ const IGNORED_FILE_SUFFIXES: &[&str] = &[
     ".log", ".map", ".cache", ".min.js", ".min.css", ".bak", ".lock", ".icns",
 ];
 
+const MAX_LINE_COUNT_BYTES: u64 = 512 * 1024;
+
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
 struct SnapshotState {
     snapshot: Mutex<HashMap<String, String>>,
+}
+
+struct ScanResultState {
+    directories: Mutex<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ScanMetrics {
+    duration_ms: f64,
+    file_count: usize,
+    dir_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TokenCountMetrics {
+    duration_ms: f64,
+    files_processed: usize,
+    cache_hits: usize,
+    cache_misses: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SkeletonFileMetrics {
+    duration_ms: f64,
+    cache_hit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SkeletonBatchMetrics {
+    duration_ms: f64,
+    files_processed: usize,
+    cache_hits: usize,
+    cache_misses: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct WatchMetrics {
+    duration_ms: f64,
+    dirs_watched: usize,
+    used_cached_dirs: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct PerfMetrics {
+    scan: Option<ScanMetrics>,
+    token_count: Option<TokenCountMetrics>,
+    skeleton_file: Option<SkeletonFileMetrics>,
+    skeleton_batch: Option<SkeletonBatchMetrics>,
+    watch: Option<WatchMetrics>,
+    token_cache_size: usize,
+    skeleton_cache_size: usize,
+}
+
+struct PerfMetricsState {
+    metrics: Mutex<PerfMetrics>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -163,12 +241,26 @@ fn normalize_relative_path(relative: &Path) -> String {
     relative.to_string_lossy().replace('\\', "/")
 }
 
-fn scan_project_entries(path: &Path) -> Result<(Vec<FileEntry>, Vec<PathBuf>), String> {
+fn file_fingerprint(path: &Path) -> Option<(u64, u128)> {
+    let metadata = path.metadata().ok()?;
+    let modified_unix_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    Some((metadata.len(), modified_unix_nanos))
+}
+
+fn scan_project_entries(path: &Path) -> Result<Vec<FileEntry>, String> {
     if !path.exists() {
         return Err("Path does not exist".to_string());
     }
 
-    let walker = WalkBuilder::new(path)
+    let root = path.to_path_buf();
+    let entries = Arc::new(Mutex::new(Vec::new()));
+
+    let walker = WalkBuilder::new(&root)
         .standard_filters(true)
         .filter_entry(|entry| {
             let name = entry.file_name().to_string_lossy();
@@ -185,45 +277,58 @@ fn scan_project_entries(path: &Path) -> Result<(Vec<FileEntry>, Vec<PathBuf>), S
 
             !is_ignored_dir(&name_lower, entry.path())
         })
-        .build();
+        .build_parallel();
 
-    let mut entries = Vec::new();
-    let mut dirs_to_watch: Vec<PathBuf> = Vec::new();
+    {
+        let entries_clone = Arc::clone(&entries);
+        let root = root.clone();
 
-    for result in walker {
-        match result {
-            Ok(entry) => {
-                let p = entry.path();
-                if p.is_dir() {
-                    dirs_to_watch.push(p.to_path_buf());
-                }
-                if p == path {
-                    continue;
-                }
+        walker.run(|| {
+            let entries = Arc::clone(&entries_clone);
+            let root = root.clone();
 
-                let relative_res = p.strip_prefix(path);
-                if let Ok(relative) = relative_res {
-                    let is_dir = p.is_dir();
-                    let size = p.metadata().map(|m| m.len()).unwrap_or(0);
-                    let mut line_count = None;
+            Box::new(move |result| {
+                match result {
+                    Ok(entry) => {
+                        let p = entry.path();
+                        if p == root.as_path() {
+                            return ignore::WalkState::Continue;
+                        }
 
-                    if !is_dir && size < 10 * 1024 * 1024 {
-                        line_count = count_lines(p);
+                        if let Ok(relative) = p.strip_prefix(&root) {
+                            let is_dir = p.is_dir();
+                            let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                            let mut line_count = None;
+
+                            // Line counting is expensive; keep scan responsive by limiting to small files.
+                            if !is_dir && size <= MAX_LINE_COUNT_BYTES {
+                                line_count = count_lines(p);
+                            }
+
+                            if let Ok(mut entries) = entries.lock() {
+                                entries.push(FileEntry {
+                                    path: p.to_string_lossy().to_string(),
+                                    relative_path: normalize_relative_path(relative),
+                                    is_dir,
+                                    size,
+                                    line_count,
+                                });
+                            }
+                        }
                     }
-
-                    entries.push(FileEntry {
-                        path: p.to_string_lossy().to_string(),
-                        relative_path: normalize_relative_path(relative),
-                        is_dir,
-                        size,
-                        line_count,
-                    });
+                    Err(err) => eprintln!("Error walking path: {}", err),
                 }
-            }
-            Err(err) => eprintln!("Error walking path: {}", err),
-        }
+
+                ignore::WalkState::Continue
+            })
+        });
     }
 
+    let mut entries = Arc::try_unwrap(entries)
+        .map_err(|_| "Failed to collect scan entries".to_string())?
+        .into_inner()
+        .map_err(|_| "Failed to collect scan entries".to_string())?;
+	
     let mut keep_dirs: HashSet<String> = HashSet::new();
     for entry in entries.iter().filter(|e| !e.is_dir) {
         let mut current = Path::new(&entry.path).parent();
@@ -239,7 +344,7 @@ fn scan_project_entries(path: &Path) -> Result<(Vec<FileEntry>, Vec<PathBuf>), S
     entries.retain(|entry| !entry.is_dir || keep_dirs.contains(&entry.path));
     entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
-    Ok((entries, dirs_to_watch))
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -248,28 +353,52 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-async fn scan_project(path: String, state: State<'_, WatcherState>) -> Result<Vec<FileEntry>, String> {
+async fn scan_project(path: String, state: State<'_, ScanResultState>, perf: State<'_, PerfMetricsState>) -> Result<Vec<FileEntry>, String> {
+    let start = Instant::now();
     let root_path = Path::new(&path);
-    let (entries, dirs_to_watch) = scan_project_entries(root_path)?;
+    let entries = scan_project_entries(root_path)?;
 
-    if let Ok(mut watcher_guard) = state.watcher.lock() {
-        if let Some(watcher) = watcher_guard.as_mut() {
-            for dir in dirs_to_watch {
-                let _ = watcher.watch(&dir, RecursiveMode::NonRecursive);
-            }
-        }
+    let file_count = entries.iter().filter(|e| !e.is_dir).count();
+    let dir_count = entries.iter().filter(|e| e.is_dir).count();
+
+    let mut dirs: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.is_dir)
+        .map(|entry| entry.path.clone())
+        .collect();
+    dirs.push(path.clone());
+
+    if let Ok(mut stored) = state.directories.lock() {
+        *stored = dirs;
+    }
+
+    if let Ok(mut m) = perf.metrics.lock() {
+        m.scan = Some(ScanMetrics {
+            duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            file_count,
+            dir_count,
+        });
+        m.token_cache_size = TOKEN_COUNT_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+        m.skeleton_cache_size = SKELETON_CACHE.lock().map(|c| c.len()).unwrap_or(0);
     }
 
     Ok(entries)
 }
 
 #[tauri::command]
-async fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, WatcherState>) -> Result<(), String> {
+async fn watch_project(
+    app: tauri::AppHandle,
+    path: String,
+    state: State<'_, WatcherState>,
+    scan_state: State<'_, ScanResultState>,
+    perf: State<'_, PerfMetricsState>,
+) -> Result<(), String> {
+    let start = Instant::now();
     let mut watcher_guard = state.watcher.lock().map_err(|_| "Failed to lock watcher state")?;
-    
+
     // Stop existing watcher by dropping it (taking it out of the Option)
     let _ = watcher_guard.take();
-    
+
     let debounce = Duration::from_millis(500);
     let last_emit = Arc::new(Mutex::new(Instant::now()));
     let last_emit_for_cb = last_emit.clone();
@@ -295,28 +424,54 @@ async fn watch_project(app: tauri::AppHandle, path: String, state: State<'_, Wat
            Err(e) => eprintln!("watch error: {:?}", e),
         }
     }).map_err(|e| e.to_string())?;
-    
-    // Use ignore::WalkBuilder to find all valid directories to watch
-    // This avoids watching massive ignored directories like node_modules which causes freezes
-    let walker = WalkBuilder::new(&path)
-        .standard_filters(true)
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            let name_lower = name.to_lowercase();
-            !is_ignored_dir(&name_lower, entry.path())
-        })
-        .build();
 
-    for result in walker {
-        if let Ok(entry) = result {
-            if entry.path().is_dir() {
-                let _ = watcher.watch(entry.path(), RecursiveMode::NonRecursive);
+    let dirs = scan_state
+        .directories
+        .lock()
+        .map(|stored| stored.clone())
+        .unwrap_or_default();
+
+    let used_cached_dirs;
+    let mut dirs_watched = 0;
+
+    if !dirs.is_empty() {
+        used_cached_dirs = true;
+        for dir_path in &dirs {
+            let _ = watcher.watch(Path::new(dir_path), RecursiveMode::NonRecursive);
+            dirs_watched += 1;
+        }
+    } else {
+        used_cached_dirs = false;
+        // Fallback: walk the tree if no cached scan result is available.
+        let walker = WalkBuilder::new(&path)
+            .standard_filters(true)
+            .filter_entry(|entry| {
+                let name = entry.file_name().to_string_lossy();
+                let name_lower = name.to_lowercase();
+                !is_ignored_dir(&name_lower, entry.path())
+            })
+            .build();
+
+        for result in walker {
+            if let Ok(entry) = result {
+                if entry.path().is_dir() {
+                    let _ = watcher.watch(entry.path(), RecursiveMode::NonRecursive);
+                    dirs_watched += 1;
+                }
             }
         }
     }
-    
+
     *watcher_guard = Some(watcher);
-    
+
+    if let Ok(mut m) = perf.metrics.lock() {
+        m.watch = Some(WatchMetrics {
+            duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            dirs_watched,
+            used_cached_dirs,
+        });
+    }
+
     Ok(())
 }
 
@@ -326,7 +481,7 @@ async fn read_file_content(path: String) -> Result<String, String> {
 }
 
 /// Result of skeleton extraction, returned to frontend
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct SkeletonResult {
     skeleton: String,
     language: Option<String>,
@@ -338,16 +493,34 @@ struct SkeletonResult {
 /// Skeletonize a file using AST-based extraction
 /// Returns structural signatures (imports, types, function signatures) without implementation details
 #[tauri::command]
-async fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
-    use std::time::Instant;
-    
+async fn skeletonize_file(path: String, perf: State<'_, PerfMetricsState>) -> Result<SkeletonResult, String> {
     let start = Instant::now();
-    eprintln!("[SKELETON] Starting: {}", path);
-    
+    let mut cache_hit = false;
+
+    let fingerprint = file_fingerprint(Path::new(&path));
+    if let Some((file_size, modified_unix_nanos)) = fingerprint {
+        let cached = SKELETON_CACHE
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&path).cloned());
+
+        if let Some(entry) = cached {
+            if entry.file_size == file_size && entry.modified_unix_nanos == modified_unix_nanos {
+                cache_hit = true;
+                if let Ok(mut m) = perf.metrics.lock() {
+                    m.skeleton_file = Some(SkeletonFileMetrics {
+                        duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+                        cache_hit,
+                    });
+                    m.skeleton_cache_size = SKELETON_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+                }
+                return Ok(entry.result);
+            }
+        }
+    }
+
     // Read the file content
-    let read_start = Instant::now();
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    eprintln!("[SKELETON] Read {} bytes in {:?}", content.len(), read_start.elapsed());
 
     // Extract file extension
     let extension = Path::new(&path)
@@ -356,9 +529,7 @@ async fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
         .unwrap_or("");
 
     // Run skeletonization
-    let skel_start = Instant::now();
     let result = skeleton::skeletonize_with_path(&content, extension, Some(&path));
-    eprintln!("[SKELETON] Skeletonized in {:?} (lang: {:?})", skel_start.elapsed(), result.language);
 
     // Calculate compression ratio
     let original_chars = content.len() as f32;
@@ -369,36 +540,68 @@ async fn skeletonize_file(path: String) -> Result<SkeletonResult, String> {
         0.0
     };
 
-    eprintln!("[SKELETON] Total time for {}: {:?}", path, start.elapsed());
-
-    Ok(SkeletonResult {
+    let skeleton_result = SkeletonResult {
         skeleton: result.skeleton,
         language: result.language.map(|l| format!("{:?}", l)),
         original_lines: result.original_lines,
         skeleton_lines: result.skeleton_lines,
         compression_ratio,
-    })
+    };
+
+    if let Some((file_size, modified_unix_nanos)) = fingerprint {
+        if let Ok(mut cache) = SKELETON_CACHE.lock() {
+            cache.insert(
+                path,
+                SkeletonCacheEntry {
+                    file_size,
+                    modified_unix_nanos,
+                    result: skeleton_result.clone(),
+                },
+            );
+        }
+    }
+
+    if let Ok(mut m) = perf.metrics.lock() {
+        m.skeleton_file = Some(SkeletonFileMetrics {
+            duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            cache_hit,
+        });
+        m.skeleton_cache_size = SKELETON_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+    }
+
+    Ok(skeleton_result)
 }
 
 /// Batch skeletonize multiple files at once for efficiency
 #[tauri::command]
-async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, String>> {
-    paths.into_iter().map(|p| {
-        // Can't directly await in map, so we'll just execute synchronously inside the async wrapper
-        // or actually, since we are largely CPU bound, spawning threads might be better but
-        // simply making the command async offloads it from the main UI thread.
-        // Re-using the logic from skeletonize_file but synchronized is fine here
-        // as long as the outer command is async.
-        
-        // However, since we call skeletonize_file (which is now async) we can't call it directly easily.
-        // Let's just inline the synchronous logic or extraction.
+async fn skeletonize_files(paths: Vec<String>, perf: State<'_, PerfMetricsState>) -> Result<Vec<Result<SkeletonResult, String>>, String> {
+    let start = Instant::now();
+    let files_processed = paths.len();
+    let hit_counter = AtomicUsize::new(0);
+
+    let results: Vec<Result<SkeletonResult, String>> = paths.into_par_iter().map(|p| {
+        let fingerprint = file_fingerprint(Path::new(&p));
+        if let Some((file_size, modified_unix_nanos)) = fingerprint {
+            let cached = SKELETON_CACHE
+                .lock()
+                .ok()
+                .and_then(|cache| cache.get(&p).cloned());
+
+            if let Some(entry) = cached {
+                if entry.file_size == file_size && entry.modified_unix_nanos == modified_unix_nanos {
+                    hit_counter.fetch_add(1, Ordering::Relaxed);
+                    return Ok(entry.result);
+                }
+            }
+        }
+
         let content = std::fs::read_to_string(&p).map_err(|e| e.to_string())?;
          let extension = Path::new(&p)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
         let result = skeleton::skeletonize_with_path(&content, extension, Some(&p));
-        
+
         let original_chars = content.len() as f32;
         let skeleton_chars = result.skeleton.len() as f32;
         let compression_ratio = if original_chars > 0.0 {
@@ -406,15 +609,43 @@ async fn skeletonize_files(paths: Vec<String>) -> Vec<Result<SkeletonResult, Str
         } else {
             0.0
         };
-        
-        Ok(SkeletonResult {
+
+        let skeleton_result = SkeletonResult {
             skeleton: result.skeleton,
             language: result.language.map(|l| format!("{:?}", l)),
             original_lines: result.original_lines,
             skeleton_lines: result.skeleton_lines,
             compression_ratio,
-        })
-    }).collect()
+        };
+
+        if let Some((file_size, modified_unix_nanos)) = fingerprint {
+            if let Ok(mut cache) = SKELETON_CACHE.lock() {
+                cache.insert(
+                    p.clone(),
+                    SkeletonCacheEntry {
+                        file_size,
+                        modified_unix_nanos,
+                        result: skeleton_result.clone(),
+                    },
+                );
+            }
+        }
+
+        Ok(skeleton_result)
+    }).collect();
+
+    let cache_hits = hit_counter.load(Ordering::Relaxed);
+    if let Ok(mut m) = perf.metrics.lock() {
+        m.skeleton_batch = Some(SkeletonBatchMetrics {
+            duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            files_processed,
+            cache_hits,
+            cache_misses: files_processed - cache_hits,
+        });
+        m.skeleton_cache_size = SKELETON_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+    }
+
+    Ok(results)
 }
 
 /// Count tokens for given text using cl100k_base encoding (GPT-3.5/4 tokenizer)
@@ -425,15 +656,77 @@ fn count_tokens(text: String) -> Result<usize, String> {
 
 /// Count tokens for multiple file paths, reading content from disk
 #[tauri::command]
-async fn count_tokens_for_files(paths: Vec<String>) -> Result<usize, String> {
-    let mut total = 0;
-    
-    for path in paths {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            total += TOKENIZER.encode_with_special_tokens(&content).len();
+async fn count_tokens_for_files(paths: Vec<String>, perf: State<'_, PerfMetricsState>) -> Result<usize, String> {
+    let start = Instant::now();
+    let files_processed = paths.len();
+
+    let results: Vec<(usize, Option<(String, TokenCacheEntry)>)> = paths
+        .par_iter()
+        .map(|path| {
+            let (file_size, modified_unix_nanos) = match file_fingerprint(Path::new(path)) {
+                Some(fingerprint) => fingerprint,
+                None => return (0, None),
+            };
+
+            let cached = TOKEN_COUNT_CACHE
+                .lock()
+                .ok()
+                .and_then(|cache| cache.get(path).copied());
+
+            if let Some(entry) = cached {
+                if entry.file_size == file_size && entry.modified_unix_nanos == modified_unix_nanos {
+                    return (entry.token_count, None);
+                }
+            }
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(_) => return (0, None),
+            };
+
+            let token_count = TOKENIZER.encode_with_special_tokens(&content).len();
+
+            (
+                token_count,
+                Some((
+                    path.clone(),
+                    TokenCacheEntry {
+                        file_size,
+                        modified_unix_nanos,
+                        token_count,
+                    },
+                )),
+            )
+        })
+        .collect();
+
+    let total = results
+        .iter()
+        .map(|(token_count, _)| *token_count)
+        .sum::<usize>();
+
+    let new_entries: Vec<(String, TokenCacheEntry)> =
+        results.into_iter().filter_map(|(_, entry)| entry).collect();
+
+    let cache_misses = new_entries.len();
+    let cache_hits = files_processed - cache_misses;
+
+    if !new_entries.is_empty() {
+        if let Ok(mut cache) = TOKEN_COUNT_CACHE.lock() {
+            cache.extend(new_entries);
         }
     }
-    
+
+    if let Ok(mut m) = perf.metrics.lock() {
+        m.token_count = Some(TokenCountMetrics {
+            duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+            files_processed,
+            cache_hits,
+            cache_misses,
+        });
+        m.token_cache_size = TOKEN_COUNT_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+    }
+
     Ok(total)
 }
 
@@ -523,6 +816,14 @@ async fn get_diffs(paths: Vec<String>, root_path: String, state: State<'_, Snaps
     Ok(diffs)
 }
 
+#[tauri::command]
+fn get_perf_metrics(perf: State<'_, PerfMetricsState>) -> PerfMetrics {
+    let mut metrics = perf.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+    metrics.token_cache_size = TOKEN_COUNT_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+    metrics.skeleton_cache_size = SKELETON_CACHE.lock().map(|c| c.len()).unwrap_or(0);
+    metrics
+}
+
 /// Clear the snapshot
 #[tauri::command]
 async fn clear_snapshot(state: State<'_, SnapshotState>) -> Result<(), String> {
@@ -551,12 +852,14 @@ pub fn run() {
 
             app.manage(WatcherState { watcher: Mutex::new(None) });
             app.manage(SnapshotState { snapshot: Mutex::new(HashMap::new()) });
+            app.manage(ScanResultState { directories: Mutex::new(Vec::new()) });
+            app.manage(PerfMetricsState { metrics: Mutex::new(PerfMetrics::default()) });
 
             Ok(())
 
         })
 
-        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project, skeletonize_file, skeletonize_files, count_tokens, count_tokens_for_files, take_snapshot, get_diffs, clear_snapshot])
+        .invoke_handler(tauri::generate_handler![greet, scan_project, read_file_content, watch_project, skeletonize_file, skeletonize_files, count_tokens, count_tokens_for_files, take_snapshot, get_diffs, clear_snapshot, get_perf_metrics])
 
         .run(tauri::generate_context!())
 
@@ -610,9 +913,7 @@ mod lib_tests {
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
 
-        let (entries, dirs) = scan_project_entries(root).expect("scan project");
-
-        assert!(dirs.iter().any(|dir| dir == &root.join("src")));
+        let entries = scan_project_entries(root).expect("scan project");
         assert!(entries.iter().any(|entry| entry.relative_path == "src/main.rs"));
     }
 }

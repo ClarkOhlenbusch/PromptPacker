@@ -8,6 +8,8 @@ import { generateAutoPreamble } from "./utils/autoPreamble";
 import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, GitCompare, Camera, Trash2 } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import { FileEntry } from "./services/FileSystem";
+import { DevPerfPanel } from "./dev/DevPerfPanel";
+import type { PerfMetrics } from "./dev/PerfMetrics";
 import "./App.css";
 
 interface DiffLine {
@@ -33,6 +35,8 @@ export default function App() {
   const scanInProgress = useRef(false);
   const pendingScanPath = useRef<string | null>(null);
   const scanDebounceTimer = useRef<number | null>(null);
+  const tokenCountDebounceTimer = useRef<number | null>(null);
+  const tokenCountRequestId = useRef(0);
 
   // Selection State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -59,6 +63,18 @@ export default function App() {
   const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(new Set());
   const [diffCopied, setDiffCopied] = useState(false);
   const [hasSnapshot, setHasSnapshot] = useState(false);
+
+  // Perf metrics
+  const [perfMetrics, setPerfMetrics] = useState<PerfMetrics | null>(null);
+  const refreshPerfMetrics = async () => {
+    if (import.meta.env.VITE_DEV_METRICS !== "true") return;
+    try {
+      const m = await invoke<PerfMetrics>("get_perf_metrics");
+      setPerfMetrics(m);
+    } catch (e) {
+      console.error("Failed to fetch perf metrics", e);
+    }
+  };
 
   function requestScan(path: string, immediate = false) {
     pendingScanPath.current = path;
@@ -95,7 +111,9 @@ export default function App() {
     if (!projectPath) return;
 
     // Start watching
-    invoke("watch_project", { path: projectPath }).catch(console.error);
+    invoke("watch_project", { path: projectPath })
+      .then(() => refreshPerfMetrics())
+      .catch(console.error);
 
     let unlisten: Promise<() => void>;
 
@@ -126,65 +144,91 @@ export default function App() {
 
     if (selectedFiles.length === 0 && !preamble.trim() && !goal.trim()) {
       setTokenCount(0);
+      setCountingTokens(false);
       return;
     }
 
-    let cancelled = false;
-    setCountingTokens(true);
+    const requestId = ++tokenCountRequestId.current;
 
-    (async () => {
-      try {
-        // Build overhead text (headers, file tree, formatting)
-        let overhead = "";
+    if (tokenCountDebounceTimer.current !== null) {
+      window.clearTimeout(tokenCountDebounceTimer.current);
+      tokenCountDebounceTimer.current = null;
+    }
 
-        if (preamble.trim()) {
-          overhead += "PREAMBLE\n" + preamble + "\n\n";
+    tokenCountDebounceTimer.current = window.setTimeout(() => {
+      tokenCountDebounceTimer.current = null;
+      setCountingTokens(true);
+
+      void (async () => {
+        try {
+          // Build overhead text (headers, file tree, formatting)
+          let overhead = "";
+          let estimatedTreeTokens = 0;
+
+          if (preamble.trim()) {
+            overhead += "PREAMBLE\n" + preamble + "\n\n";
+          }
+
+          if (includeFileTree && files.length > 0) {
+            const treeChars = files.reduce((total, file) => {
+              return total + file.relative_path.length + 28;
+            }, 0);
+            estimatedTreeTokens = Math.round((treeChars + 8) / 4);
+          }
+
+          selectedFiles.forEach(f => {
+            const isFull = tier1Paths.has(f.path);
+            overhead += `FILE ${f.relative_path} ${isFull ? "FULL" : "SKELETON"}\n`;
+            overhead += "\nEND_FILE\n\n";
+          });
+
+          if (goal.trim()) {
+            overhead += "GOAL\n" + goal + "\n";
+          }
+
+          const overheadPromise: Promise<number> = overhead.length > 0
+            ? invoke<number>("count_tokens", { text: overhead })
+            : Promise.resolve(0);
+
+          const fullPromise: Promise<number> = fullPaths.length > 0
+            ? invoke<number>("count_tokens_for_files", { paths: fullPaths })
+            : Promise.resolve(0);
+
+          // For skeleton files, count full tokens then apply a fixed ratio.
+          const skeletonPromise: Promise<number> = skeletonPaths.length > 0
+            ? invoke<number>("count_tokens_for_files", { paths: skeletonPaths })
+            : Promise.resolve(0);
+
+          const [overheadTokens, fullTokens, skeletonFullTokens] = await Promise.all([
+            overheadPromise,
+            fullPromise,
+            skeletonPromise,
+          ]);
+
+          if (requestId === tokenCountRequestId.current) {
+            const skeletonTokens = Math.round(skeletonFullTokens * 0.3);
+            setTokenCount(overheadTokens + estimatedTreeTokens + fullTokens + skeletonTokens);
+          }
+        } catch (e) {
+          console.error("Token counting failed:", e);
+          if (requestId === tokenCountRequestId.current) {
+            setTokenCount(null);
+          }
+        } finally {
+          if (requestId === tokenCountRequestId.current) {
+            setCountingTokens(false);
+            void refreshPerfMetrics();
+          }
         }
+      })();
+    }, 250);
 
-        if (includeFileTree && files.length > 0) {
-          overhead += "TREE\n";
-          // Estimate tree: ~50 chars per file entry on average
-          overhead += files.map(f => `├─ ${f.relative_path} (${f.size} B, ${f.line_count || 0} lines)\n`).join("");
-          overhead += "\n\n";
-        }
-
-        // Add file headers/footers
-        selectedFiles.forEach(f => {
-          const isFull = tier1Paths.has(f.path);
-          overhead += `FILE ${f.relative_path} ${isFull ? "FULL" : "SKELETON"}\n`;
-          overhead += "\nEND_FILE\n\n";
-        });
-
-        if (goal.trim()) {
-          overhead += "GOAL\n" + goal + "\n";
-        }
-
-        const overheadTokens: number = overhead.length > 0
-          ? await invoke("count_tokens", { text: overhead })
-          : 0;
-
-        const fullTokens: number = fullPaths.length > 0
-          ? await invoke("count_tokens_for_files", { paths: fullPaths })
-          : 0;
-
-        // For skeleton files, count full tokens then apply 30% estimate
-        const skeletonFullTokens: number = skeletonPaths.length > 0
-          ? await invoke("count_tokens_for_files", { paths: skeletonPaths })
-          : 0;
-        const skeletonTokens = Math.round(skeletonFullTokens * 0.3);
-
-        if (!cancelled) {
-          setTokenCount(overheadTokens + fullTokens + skeletonTokens);
-        }
-      } catch (e) {
-        console.error("Token counting failed:", e);
-        if (!cancelled) setTokenCount(null);
-      } finally {
-        if (!cancelled) setCountingTokens(false);
+    return () => {
+      if (tokenCountDebounceTimer.current !== null) {
+        window.clearTimeout(tokenCountDebounceTimer.current);
+        tokenCountDebounceTimer.current = null;
       }
-    })();
-
-    return () => { cancelled = true; };
+    };
   }, [files, selectedPaths, tier1Paths, preamble, goal, includeFileTree]);
 
   async function handleOpenFolder() {
@@ -245,6 +289,7 @@ export default function App() {
     } finally {
       setLoading(false);
       scanInProgress.current = false;
+      void refreshPerfMetrics();
       if (pendingScanPath.current) {
         const nextPath = pendingScanPath.current;
         pendingScanPath.current = null;
@@ -343,6 +388,7 @@ export default function App() {
       alert("Failed to generate prompt");
     } finally {
       setGenerating(false);
+      void refreshPerfMetrics();
     }
   };
 
@@ -687,6 +733,9 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Dev Perf Metrics */}
+              {import.meta.env.VITE_DEV_METRICS === "true" && <DevPerfPanel metrics={perfMetrics} />}
+
             </div>
           </div>
 
@@ -740,12 +789,12 @@ export default function App() {
               </div>
               <button onClick={() => setShowOutput(false)} className="hover:bg-slate-100 text-packer-text-muted hover:text-packer-grey p-2 rounded-full transition"><X size={24} /></button>
             </div>
-            <div className="flex-1 p-0 relative">
-              <textarea
-                readOnly
-                value={generatedPrompt || ""}
-                className="w-full h-full bg-slate-50 text-packer-grey font-mono text-sm p-8 focus:outline-none resize-none custom-scrollbar leading-relaxed"
-              />
+            <div className="flex-1 min-h-0 p-0 relative">
+              <div className="w-full h-full overflow-auto custom-scrollbar bg-slate-50 p-8">
+                <pre className="text-packer-grey font-mono text-sm whitespace-pre-wrap leading-relaxed">
+                  {generatedPrompt || ""}
+                </pre>
+              </div>
             </div>
             <div className="p-6 border-t border-packer-border bg-white flex justify-between items-center">
               <span className="text-xs text-packer-text-muted font-mono bg-slate-100 px-2 py-1 rounded">

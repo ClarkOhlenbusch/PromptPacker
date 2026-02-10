@@ -1,12 +1,12 @@
 {
   "name": "prompt-pack-colab",
   "private": true,
-  "version": "%npm_config_ver%",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "package": "node scripts/version.js --ver=%npm_config_ver% && npm run build && node scripts/package.js",
+    "package": "node scripts/version.js && npm run build && node scripts/package.js",
     "preview": "vite preview",
     "test": "vitest"
   },

@@ -9,13 +9,24 @@ const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const manifestJsonPath = path.join(rootDir, 'public', 'manifest.json');
 
-// Get version from command line argument --ver=x.y.z
+// Get version from environment variable (set via npm run package --ver=x.y.z)
+// or from command line argument --ver=x.y.z
+const envVer = process.env.npm_config_ver;
 const args = process.argv.slice(2);
 const verArg = args.find(arg => arg.startsWith('--ver='));
-const newVersion = verArg ? verArg.split('=')[1] : null;
+const argVer = verArg ? verArg.split('=')[1] : null;
 
-if (!newVersion) {
-    console.log('No version specified. Skipping version update.');
+const newVersion = argVer || envVer;
+
+// Basic validation: 1-4 dot-separated integers
+const versionRegex = /^\d+(\.\d+){0,3}$/;
+
+if (!newVersion || !versionRegex.test(newVersion)) {
+    if (newVersion) {
+        console.error(`Invalid version format: "${newVersion}". Must be 1-4 dot-separated integers.`);
+        process.exit(1);
+    }
+    console.log('No version specified or found in environment. Skipping version update.');
     process.exit(0);
 }
 

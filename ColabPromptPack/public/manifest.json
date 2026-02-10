@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PromptPack Colab",
-  "version": "%npm_config_ver%",
+  "version": "1.0.2",
   "description": "Pack Google Colab cells into AI prompts.",
   "icons": {
     "16": "icons/icon-16.png",

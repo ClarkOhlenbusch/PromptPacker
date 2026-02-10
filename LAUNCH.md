@@ -1,4 +1,4 @@
-# 🚀 PromptPacker Launch Kit
+# 🚀 PromptPacker Launch Kit v2 — Colab-First Edition
 
 **Ready to launch?** This file contains everything you need to copy-paste for your launch.
 
@@ -10,22 +10,20 @@
 - [ ] Assets folder created ✓
 - [ ] Logo in assets ✓
 - [ ] Screenshots taken (YOU DO THIS)
-  - Save as: `assets/screenshot-main.png` (main interface)
-  - Save as: `assets/screenshot-skeleton.png` (AST skeletonization view)
+  - Save as: `assets/screenshot-colab.png` (extension in Colab)
+  - Save as: `assets/screenshot-diff.png` (diff tracking feature)
+  - Save as: `assets/screenshot-main.png` (desktop app — secondary)
+- [ ] Chrome Web Store link ready (add to posts when available)
 - [ ] Test install flow
 - [ ] Latest release published on GitHub
 
 ---
 
-## 📋 Git Commit & Push
+## 📋 Git Commit & Push (if needed)
 
 ```bash
 git add .
-git commit -m "docs: polish README for launch, add assets folder
-
-- Rewrite README with better hook and structure
-- Add logo to assets folder
-- Add launch materials"
+git commit -m "docs: update launch materials for Colab-first narrative"
 git push origin main
 ```
 
@@ -35,96 +33,113 @@ git push origin main
 
 **URL:** https://news.ycombinator.com/submit
 
-**Title:** Show HN: PromptPacker – Stop pasting code into ChatGPT
+**Title:** Show HN: PromptPacker — A better way to get Colab code into ChatGPT
 
 **Body:**
 
 ```
 Hey HN,
 
-Built this because I was tired of copy-pasting 47 files into ChatGPT and hoping it understood my codebase.
+I got tired of Gemini for Colab being... not great. It would try to analyze my entire notebook, download the whole Python file, and fill up context with stuff I didn't need.
 
-PromptPacker is a context engineering toolkit for working with LLMs. It:
+So I built PromptPacker — a Chrome extension (plus desktop app) that treats Colab cells as actual "files" you can selectively pack for LLMs.
 
-• Scans your project intelligently (respects .gitignore, skips binaries)
-• Generates AST skeletons — 70% fewer tokens, same structural understanding
-• Runs 100% locally (Rust/Tauri desktop app)
-• Has a Chrome extension for Google Colab
+The problem I kept hitting:
+• Gemini would analyze the entire notebook or download the whole .ipynb
+• No way to show diffs between versions
+• No easy way to select just the cells that changed
+• Context would get stuffed with outputs I didn't care about
 
-The "AST skeletonization" thing is the killer feature IMO. Instead of pasting full file contents, you get imports, types, and function signatures. The LLM understands your architecture without wasting tokens on implementation details.
+What PromptPacker does:
+• Treats each Colab cell as a "file" you can select/deselect
+• Tracks diffs — see exactly what changed since your last snapshot
+• Visual diff view before you pack
+• Global hotkeys to copy context instantly
+• 70% token reduction via AST skeletonization
 
+Also has a desktop app (Rust/Tauri) for local projects, but honestly I built the extension first because that's where I was feeling the pain every day.
+
+Chrome Web Store: [link when ready]
 Site: https://promptpacker.dev
 GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
 
-Tech stack: Rust (Tauri v2), React 19, TypeScript, Tree-sitter
+Tech: React, Vite, Chrome Manifest V3, Rust/Tauri for desktop
 
-Built this in my spare time. Would love feedback!
+Would love feedback from other Colab users!
 ```
 
 **Best time to post:** Tuesday-Thursday, 8-10 AM PT
 
 ---
 
-## 🐦 Twitter/X Thread
+## 🐦 Twitter/X Thread — Colab-Focused
 
-**Post 1:**
+**Post 1 (Hook):**
 ```
-I built a tool that cut my ChatGPT token usage by 70%.
+Gemini for Google Colab is... not it.
 
-It's called PromptPacker, and it completely changed how I work with LLMs.
+I was tired of it downloading my entire notebook, stuffing context with garbage, and having zero way to show diffs.
 
-Here's what it does 🧵
-```
+So I built something better.
 
-**Post 2:**
-```
-The problem: You're working on a codebase and want to ask ChatGPT something.
-
-So you copy-paste files. A lot of files.
-
-But most of what you paste is noise — node_modules, build artifacts, implementation details the LLM doesn't need.
+Here's PromptPacker 🧵
 ```
 
-**Post 3:**
+**Post 2 (The Pain):**
 ```
-PromptPacker fixes this with "AST skeletonization."
+The daily struggle:
 
-Instead of full file contents, you get:
-• Imports
-• Types  
-• Function signatures
+• Ask Gemini about my Colab → it analyzes the ENTIRE notebook
+• Try to paste into ChatGPT → downloading .ipynb files like a caveman
+• Want to show what changed → copy-paste cells manually
+• Context gets nuked with outputs and metadata I don't need
 
-70% fewer tokens. Same structural understanding.
-```
-
-**Post 4:**
-```
-It runs 100% locally.
-
-No cloud. No tracking. No BS.
-
-Just a fast Rust + Tauri desktop app that respects your .gitignore and skips binaries automatically.
+There had to be a better way.
 ```
 
-**Post 5:**
+**Post 3 (The Solution):**
 ```
-There's also a Chrome extension for Google Colab.
+PromptPacker is a Chrome extension that treats Colab cells as actual "files."
 
-Same features, but works inside your notebook. Tracks diffs, takes snapshots, has global hotkeys.
-
-Because context engineering shouldn't stop at your desktop.
+✅ Select/deselect individual cells
+✅ Track diffs since your last snapshot
+✅ Visual side-by-side before packing
+✅ Global hotkey (Ctrl+Shift+C) to copy instantly
+✅ Respects your context budget
 ```
 
-**Post 6:**
+**Post 4 (The Tech):**
 ```
-It's free, open source, and I use it every day.
+How it works:
+
+The extension injects into Colab's DOM, treats cells as a virtual filesystem, and gives you a file-tree UI right in the sidebar.
+
+Plus AST skeletonization — instead of full cell contents, you get structure (imports, function signatures). 70% fewer tokens, same understanding.
+```
+
+**Post 5 (Desktop Bonus):**
+```
+There's also a desktop app (Rust + Tauri) for local projects.
+
+Same features, but for your actual filesystem:
+• Respects .gitignore
+• Auto-watch for changes
+• Smart preamble generation
+
+Built it because the extension worked so well I wanted it everywhere.
+```
+
+**Post 6 (CTA):**
+```
+It's free, open source, and I use it every single day.
+
+If you use Colab + ChatGPT/Claude, this will save you time.
 
 🌐 https://promptpacker.dev
 ⭐ https://github.com/ClarkOhlenbusch/PromptPacker
+🧩 Chrome Web Store: [link]
 
-Built with Rust, React, and too much coffee.
-
-RTs appreciated 🙏
+Built because Gemini wasn't cutting it. Hope it helps you too 🙏
 ```
 
 **Best time:** Tuesday-Thursday, 9-11 AM ET
@@ -133,106 +148,171 @@ RTs appreciated 🙏
 
 ## 🔴 Reddit Posts
 
-### r/rust
+### r/MachineLearning
 
-**URL:** https://www.reddit.com/r/rust/submit
+**URL:** https://www.reddit.com/r/MachineLearning/submit
 
-**Title:** PromptPacker — A context engineering toolkit built with Rust + Tauri
+**Title:** I built a Chrome extension that makes getting Colab code into ChatGPT actually good
 
 **Body:**
 ```
-Hey r/rust!
+Like many of you, I use Google Colab for ML experiments and ChatGPT/Claude for help.
 
-Been working on a desktop app for "context engineering" — basically, intelligently packaging codebases for LLMs.
+But getting code from Colab into an LLM context was always painful:
 
-The desktop app is built with Tauri v2 + Rust. Uses tree-sitter for parsing and generating AST skeletons (imports, types, function signatures). This cuts token usage by ~70% while keeping structural context.
+• Gemini for Colab would try to analyze the entire notebook
+• Downloading the .ipynb meant dealing with JSON metadata
+• No way to show diffs between versions
+• No easy selection of "just the cells that changed"
 
-Also built a Chrome extension (React + Vite) that brings the same features to Google Colab.
+So I built PromptPacker — a Chrome extension that:
 
-GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
+✅ Treats each Colab cell as a selectable "file"
+✅ Tracks diffs since your last snapshot
+✅ Shows visual diffs before packing
+✅ Has global hotkeys for instant copy
+✅ Does AST skeletonization (70% token reduction)
+
+The extension injects into Colab's DOM and gives you a file-tree UI in the sidebar. Way easier than copy-pasting individual cells or dealing with notebook downloads.
+
+Also has a desktop app (Rust/Tauri) for local projects with the same features.
+
+Chrome Web Store: [link]
 Site: https://promptpacker.dev
+GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
 
-Curious what you all think! Particularly interested in feedback on the Rust architecture — using a FileSystem abstraction that works across desktop (tauri::command) and browser (DOM scraping via postMessage).
+Built this because I was feeling the pain daily. Hope it helps some of you too!
 ```
 
 ### r/webdev
 
 **URL:** https://www.reddit.com/r/webdev/submit
 
-**Title:** I built a tool that cut my ChatGPT token usage by 70%
+**Title:** Showoff Saturday: I built a Chrome extension because Gemini for Colab wasn't cutting it
 
 **Body:**
 ```
-As a web dev, I'm constantly asking ChatGPT questions about my codebase.
+The problem: I use Google Colab for quick prototypes and ChatGPT for debugging. But getting code from Colab into ChatGPT was always:
 
-But copy-pasting files is painful:
-• You paste too much (node_modules, build artifacts)
-• You waste tokens on implementation details
-• You lose track of what you already shared
+• Copy-pasting individual cells (tedious)
+• Downloading the entire .ipynb (messy)
+• Using Gemini (which would analyze the whole notebook and miss the point)
 
-So I built PromptPacker. It:
+So I built PromptPacker — a Chrome extension that treats Colab cells as a virtual filesystem.
 
-✅ Scans your project (respects .gitignore)
-✅ Generates AST skeletons (imports, types, signatures)
-✅ Runs 100% locally (Rust + Tauri)
-✅ Has a Chrome extension for Colab
+Features:
+• File-tree UI in the Colab sidebar
+• Select/deselect cells like files
+• Diff tracking — see what changed since last snapshot
+• Visual diff view before packing
+• Global hotkey to copy context instantly
+• AST skeletonization (structure only, 70% fewer tokens)
 
-The "skeletonization" is the killer feature. Instead of full file contents, the LLM gets just the structure. Way fewer tokens, same understanding.
+Tech stack: React 19, Vite, Chrome Manifest V3, DOM scraping via content script
 
-It's free and open source. Would love your feedback!
+There's also a desktop version (Rust + Tauri) for local projects, but the extension was the "scratch your own itch" origin story.
 
-https://promptpacker.dev
+Chrome Web Store: [link]
+GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
+
+Curious what other devs think!
 ```
 
 ### r/LocalLLaMA
 
 **URL:** https://www.reddit.com/r/LocalLLaMA/submit
 
-**Title:** PromptPacker — Context engineering toolkit for local LLM workflows
+**Title:** PromptPacker — Context engineering for Colab (with local LLM support in mind)
 
 **Body:**
 ```
-For those of us running local LLMs, token efficiency matters even more.
+If you're running local LLMs, token efficiency matters even more.
 
-Built PromptPacker to intelligently package codebases for LLMs. Key features:
+I built PromptPacker primarily as a Chrome extension for Google Colab, with a focus on sending only the context you actually need.
 
-• AST skeletonization — 70% token reduction via tree-sitter parsing
-• Smart file selection — respects .gitignore, skips binaries
-• 100% local — Rust/Tauri desktop app, no cloud
-• Chrome extension — works in Google Colab
+The Colab Problem:
+• Gemini tries to analyze your entire notebook
+• Downloading .ipynb files includes tons of metadata
+• No way to select specific cells or show diffs
+• Context gets bloated with outputs
 
-The AST approach gives you structural understanding without burning tokens on implementation details. Especially useful for smaller context windows.
+PromptPacker fixes this by:
+• Treating cells as selectable "files"
+• AST skeletonization — send structure (imports, signatures) not full implementations
+• 70% token reduction while keeping semantic understanding
+• Diff tracking — only pack what changed
 
-https://github.com/ClarkOhlenbusch/PromptPacker
+Built with local LLMs in mind: when you have a 4K-8K context window, every token matters. Sending skeletonized code vs full implementations is the difference between fitting your whole project context or not.
 
-Would appreciate any feedback from the local LLM community!
+Also has a desktop app (Rust/Tauri) for local file projects.
+
+Chrome Web Store: [link]
+GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
+
+Would love feedback from the local LLM community!
+```
+
+### r/rust
+
+**URL:** https://www.reddit.com/r/rust/submit
+
+**Title:** PromptPacker — Built a Chrome extension first, then a Rust desktop app
+
+**Body:**
+```
+Hey r/rust!
+
+Built a Chrome extension (React/Vite) to solve a Colab workflow problem, then liked the architecture so much I built a desktop version with Tauri v2 + Rust.
+
+The original problem: Gemini for Colab would analyze entire notebooks, download massive .ipynb files, and provide no diff tracking. So I built a browser extension that treats Colab cells as a virtual filesystem.
+
+The desktop app (prompt-pack-lite/) uses:
+• Tauri v2 for the Rust backend
+• Tree-sitter for AST parsing
+• Hexagonal architecture shared with the extension
+
+The FileSystem abstraction is the cool part — same React frontend works with:
+• Desktop: Rust tauri::command for file scanning
+• Extension: DOM scraping via content script + postMessage
+
+GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
+Site: https://promptpacker.dev
+
+Curious what Rustaceans think of the Tauri architecture!
 ```
 
 ---
 
 ## 💬 Discord Communities
 
-Copy-paste this into relevant channels:
+### For ML/AI Communities (LocalLLaMA, Latent Space, etc.):
 
 ```
-Hey all! Just launched PromptPacker — a context engineering toolkit for working with LLMs.
+Built a Chrome extension for Google Colab because Gemini wasn't cutting it.
 
-Built with Rust + Tauri (desktop) and React (browser extension).
+Problem: Gemini analyzes your entire notebook, downloads massive .ipynb files, no diff tracking.
 
-Key feature: AST skeletonization that cuts token usage by 70% while keeping structural context.
+Solution: Treat Colab cells as selectable "files" — pick what you want, see diffs, copy instantly. Plus AST skeletonization for 70% token reduction.
+
+Built it for my own Colab → ChatGPT workflow. Hope it helps others too.
 
 https://promptpacker.dev
-
-Would love feedback from this community!
+Chrome Web Store: [link]
 ```
 
-**Communities to hit:**
-- Theo's Discord (t3.gg)
-- Fireship Discord
-- Rust Programming Language (official)
-- Tauri Discord
-- LocalLLaMA Discord
-- Latent Space Discord
+### For Web Dev Communities (Theo's discord, etc.):
+
+```
+Shipped a Chrome extension that makes Colab + ChatGPT actually usable.
+
+Gemini for Colab was driving me nuts — entire notebook analysis, no diff tracking, bloated context. So I built PromptPacker.
+
+Injects into Colab, treats cells as a virtual filesystem, has global hotkeys, diff tracking, AST skeletonization.
+
+Also has a Rust/Tauri desktop app for local projects.
+
+Check it out: https://promptpacker.dev
+```
 
 ---
 
@@ -240,29 +320,72 @@ Would love feedback from this community!
 
 **URL:** https://www.producthunt.com/posts/new
 
-**Title:** PromptPacker — Context engineering for LLMs
+**Title:** PromptPacker — The Colab extension I wish existed
 
-**Tagline:** Stop pasting code. Start packing.
+**Tagline:** Stop fighting Gemini. Start packing.
 
 **Description:**
 ```
-PromptPacker intelligently packages your codebase for LLMs. 
+I built PromptPacker because Gemini for Google Colab wasn't cutting it.
 
-Instead of copy-pasting files into ChatGPT, you get:
+Every time I wanted to get Colab code into ChatGPT, I had to:
+• Copy-paste individual cells (tedious)
+• Download the entire .ipynb (messy)
+• Watch Gemini analyze my whole notebook (slow, bloated)
 
-• Smart project scanning (respects .gitignore)
-• AST skeletonization (70% fewer tokens)
-• 100% local desktop app (Rust/Tauri)
-• Chrome extension for Google Colab
+PromptPacker is a Chrome extension that treats Colab cells as actual "files":
 
-The "AST skeletonization" feature generates structural summaries — imports, types, function signatures — so LLMs understand your architecture without wasting tokens on implementation details.
+• Select/deselect cells in a file-tree UI
+• Track diffs since your last snapshot
+• Visual diff view before packing
+• Global hotkey for instant copy
+• AST skeletonization — 70% fewer tokens
 
-Free and open source.
+Also has a desktop app (Rust/Tauri) for local projects with the same features.
+
+Built for my own daily workflow. Hope it helps yours.
 ```
 
-**Topics:** Developer Tools, AI, Productivity, Open Source
+**Topics:** Developer Tools, AI, Productivity, Chrome Extensions, Open Source
 
 **Makers:** Clark Ohlenbusch
+
+---
+
+## 📧 Email/Newsletter Pitch (if needed)
+
+**Subject:** I built a Chrome extension because Gemini for Colab was driving me nuts
+
+**Body:**
+
+```
+Hey [name],
+
+Quick one: I built a Chrome extension called PromptPacker and I think you might dig it.
+
+The backstory: I use Google Colab for prototypes and ChatGPT for debugging. But getting code from Colab into ChatGPT was always painful.
+
+Gemini for Colab would try to analyze my entire notebook. Or I'd download the .ipynb and paste it, which meant dealing with JSON metadata and bloated context. No diff tracking. No way to select just the cells I changed.
+
+So I built PromptPacker. It's a Chrome extension that:
+
+• Treats each Colab cell as a "file" you can select/deselect
+• Tracks diffs — see exactly what changed since your last snapshot
+• Shows visual diffs before you pack
+• Has global hotkeys for instant copy
+• Does AST skeletonization (70% token reduction)
+
+I use it every day. Also built a desktop app (Rust + Tauri) for local projects.
+
+Check it out:
+• Site: https://promptpacker.dev
+• Chrome Web Store: [link]
+• GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
+
+Would love your take!
+
+— Clark
+```
 
 ---
 
@@ -274,6 +397,7 @@ After launch, watch these:
 |--------|----------|-------------|
 | GitHub Stars | 5 | 50-100 |
 | Website Visits | 0 | 1000+ |
+| Chrome Extension Installs | 0 | 100+ |
 | HN Position | — | Front page |
 | Reddit Upvotes | — | 50+ per post |
 
@@ -283,11 +407,11 @@ After launch, watch these:
 
 After launch, keep momentum:
 
-1. **"How I built PromptPacker"** blog post
-2. **"AST Skeletonization deep dive"** technical writeup  
-3. **"PromptPacker vs manual copy-paste"** comparison
-4. **Twitter thread:** Lessons learned building with Rust + Tauri
-5. **60-second demo video** for TikTok/Reels/Shorts
+1. **"Why Gemini for Colab Falls Short"** — comparison post
+2. **"Building a Chrome Extension for DOM Scraping"** — technical deep dive
+3. **"How I reduced LLM token usage by 70%"** — AST skeletonization explainer
+4. **Video demo:** 60-second Colab workflow before/after
+5. **Twitter thread:** "The anatomy of a Colab cell" — why .ipynb is messy
 
 ---
 
@@ -297,6 +421,7 @@ Tag me (@MeLo) if you need:
 - Responses to comments/questions
 - Follow-up posts drafted
 - README updates based on feedback
+- Chrome Web Store listing copy
 - Anything else!
 
-**Now go get those stars!** ⭐
+**Now go get those installs!** 🚀

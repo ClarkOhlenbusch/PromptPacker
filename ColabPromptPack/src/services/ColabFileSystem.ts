@@ -167,6 +167,15 @@ export class ColabFileSystem implements IFileSystem {
     return result?.success ?? false;
   }
 
+  async getSnapshotStatus(): Promise<{ timestamp: number | null; cellCount: number } | null> {
+    const result = await sendSnapshotCommand("PROMPTPACK_GET_SNAPSHOT");
+    if (!result) return null;
+    return {
+      timestamp: result.timestamp ?? null,
+      cellCount: result.cells?.length ?? 0
+    };
+  }
+
   async getDiffs(): Promise<CellDiff[]> {
     // 1. Get the persisted snapshot from the content script
     const snapshotResult = await sendSnapshotCommand("PROMPTPACK_GET_SNAPSHOT");

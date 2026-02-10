@@ -444,6 +444,8 @@ export default function App() {
           onClearHistory={diffs.handleClearHistory}
           copyFormat={diffs.copyFormat}
           onSetCopyFormat={diffs.setCopyFormat}
+          hasSnapshot={diffs.hasSnapshot}
+          lastSnapshotTime={diffs.lastSnapshotTime}
         />
       )}
     </div>

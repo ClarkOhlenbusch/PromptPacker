@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Camera, CheckCircle2, Copy, GitCompare, Trash2, X } from "lucide-react";
 import { CellDiff, DiffLine } from "../services/ColabFileSystem";
 
@@ -12,6 +13,8 @@ interface DiffModalProps {
     onClearHistory: () => void;
     copyFormat: "before-after" | "unified";
     onSetCopyFormat: (format: "before-after" | "unified") => void;
+    hasSnapshot: boolean;
+    lastSnapshotTime: number | null;
 }
 
 function renderDiffLine(line: DiffLine, index: number) {
@@ -53,7 +56,17 @@ export function DiffModal({
     onClearHistory,
     copyFormat,
     onSetCopyFormat,
+    hasSnapshot,
+    lastSnapshotTime,
 }: DiffModalProps) {
+    const [snapshotJustTaken, setSnapshotJustTaken] = useState(false);
+
+    const handleSnapshotClick = () => {
+        onTakeSnapshot();
+        setSnapshotJustTaken(true);
+        setTimeout(() => setSnapshotJustTaken(false), 2000);
+    };
+
     return (
         <div className="fixed inset-0 z-50 bg-packer-grey/20 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-6xl h-full max-h-[90vh] rounded-lg shadow-2xl flex flex-col border border-packer-border overflow-hidden">
@@ -67,21 +80,38 @@ export function DiffModal({
                             <h3 className="font-bold text-lg text-packer-grey">
                                 Changes Detected
                             </h3>
-                            <p className="text-xs text-packer-text-muted">
-                                {cellDiffs.length === 0
-                                    ? "No changes detected since last snapshot"
-                                    : `${cellDiffs.length} cell(s) modified`}
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-xs text-packer-text-muted">
+                                    {cellDiffs.length === 0
+                                        ? "No changes detected since last snapshot"
+                                        : `${cellDiffs.length} cell(s) modified`}
+                                </p>
+                                {hasSnapshot && (
+                                    <span className="flex items-center gap-1 text-[10px] bg-blue-50 text-packer-blue px-2 py-0.5 rounded-full font-bold uppercase tracking-tight">
+                                        <Camera size={10} />
+                                        Baseline Active {lastSnapshotTime ? `(${new Date(lastSnapshotTime).toLocaleTimeString()})` : ""}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={onTakeSnapshot}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 text-packer-text-muted hover:text-blue-600 transition-all text-xs font-medium"
+                            onClick={handleSnapshotClick}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border transition-all text-xs font-medium ${snapshotJustTaken
+                                ? "bg-green-600 border-green-600 text-white"
+                                : hasSnapshot
+                                    ? "border-blue-200 bg-blue-50 text-packer-blue hover:bg-blue-100"
+                                    : "border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 text-packer-text-muted hover:text-blue-600"
+                                }`}
                             title="Take a new snapshot (mark current state as baseline)"
                         >
-                            <Camera size={14} />
-                            Snapshot
+                            {snapshotJustTaken ? (
+                                <CheckCircle2 size={14} />
+                            ) : (
+                                <Camera size={14} />
+                            )}
+                            {snapshotJustTaken ? "Snapshot Taken!" : "Snapshot"}
                         </button>
                         <button
                             onClick={onClearHistory}
@@ -200,8 +230,8 @@ export function DiffModal({
                             <button
                                 onClick={() => onSetCopyFormat("before-after")}
                                 className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${copyFormat === "before-after"
-                                        ? "bg-white text-packer-blue shadow-sm"
-                                        : "text-packer-text-muted hover:text-packer-grey"
+                                    ? "bg-white text-packer-blue shadow-sm"
+                                    : "text-packer-text-muted hover:text-packer-grey"
                                     }`}
                             >
                                 Before/After
@@ -209,8 +239,8 @@ export function DiffModal({
                             <button
                                 onClick={() => onSetCopyFormat("unified")}
                                 className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${copyFormat === "unified"
-                                        ? "bg-white text-packer-blue shadow-sm"
-                                        : "text-packer-text-muted hover:text-packer-grey"
+                                    ? "bg-white text-packer-blue shadow-sm"
+                                    : "text-packer-text-muted hover:text-packer-grey"
                                     }`}
                             >
                                 Unified Diff

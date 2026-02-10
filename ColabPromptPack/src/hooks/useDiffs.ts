@@ -17,6 +17,8 @@ export interface UseDiffsReturn {
     toggleDiffSelection: (path: string) => void;
     generateDiffPrompt: () => string;
     copyDiffToClipboard: () => Promise<void>;
+    hasSnapshot: boolean;
+    lastSnapshotTime: number | null;
 }
 
 export function useDiffs(fs: IFileSystem): UseDiffsReturn {
@@ -26,6 +28,18 @@ export function useDiffs(fs: IFileSystem): UseDiffsReturn {
     const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(new Set());
     const [copyFormat, setCopyFormat] = useState<"before-after" | "unified">("before-after");
     const [diffCopied, setDiffCopied] = useState(false);
+    const [hasSnapshot, setHasSnapshot] = useState(false);
+    const [lastSnapshotTime, setLastSnapshotTime] = useState<number | null>(null);
+
+    const refreshSnapshotStatus = useCallback(async () => {
+        const colabFs = fs as ColabFileSystem;
+        if (!colabFs.getSnapshotStatus) return;
+        const status = await colabFs.getSnapshotStatus();
+        if (status) {
+            setHasSnapshot(status.cellCount > 0);
+            setLastSnapshotTime(status.timestamp);
+        }
+    }, [fs]);
 
     const handleViewDiffs = useCallback(async () => {
         setLoadingDiffs(true);
@@ -42,6 +56,7 @@ export function useDiffs(fs: IFileSystem): UseDiffsReturn {
             alert("Failed to get changes. Make sure you have made some edits after the initial scan.");
         } finally {
             setLoadingDiffs(false);
+            refreshSnapshotStatus();
         }
     }, [fs]);
 
@@ -50,10 +65,7 @@ export function useDiffs(fs: IFileSystem): UseDiffsReturn {
             const colabFs = fs as ColabFileSystem;
             const success = await colabFs.takeSnapshot();
             if (success) {
-                window.parent.postMessage({
-                    type: "SHOW_TOAST",
-                    text: "Snapshot Taken! Current state saved as baseline."
-                }, "*");
+                refreshSnapshotStatus();
             }
         } catch (e) {
             console.error("Failed to take snapshot", e);
@@ -65,6 +77,8 @@ export function useDiffs(fs: IFileSystem): UseDiffsReturn {
             const colabFs = fs as ColabFileSystem;
             await colabFs.clearHistory();
             setCellDiffs([]);
+            setHasSnapshot(false);
+            setLastSnapshotTime(null);
         } catch (e) {
             console.error("Failed to clear history", e);
         }
@@ -146,5 +160,7 @@ export function useDiffs(fs: IFileSystem): UseDiffsReturn {
         toggleDiffSelection,
         generateDiffPrompt,
         copyDiffToClipboard,
+        hasSnapshot,
+        lastSnapshotTime,
     };
 }

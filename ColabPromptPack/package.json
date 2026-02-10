@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "package": "npm run build && powershell -Command \"Compress-Archive -Path dist/* -DestinationPath ..\\PromptPackColab-chrome.zip -Force\"",
     "preview": "vite preview",
     "test": "vitest"
   },

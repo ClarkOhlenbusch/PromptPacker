@@ -113,7 +113,7 @@ export default function App() {
           prev ? prev + "\n\n" + autoPreamble : autoPreamble
         );
       } else {
-        alert("No suitable config files or README found to generate context.");
+        alert("Could not generate preamble. The notebook may be empty or have no analyzable content.");
       }
     } catch (e) {
       console.error(e);

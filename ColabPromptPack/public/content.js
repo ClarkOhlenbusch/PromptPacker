@@ -25,6 +25,7 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
   let injectedScriptReady = false;
   let pendingCellRequests = [];
   let pendingGetCellsCallbacks = [];
+  let snapshotCells = null; // Persisted snapshot data (survives iframe destroy/recreate)
 
   function requestCells() {
     if (injectedScriptReady) {
@@ -37,7 +38,7 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
   // Inject the Page Script
   const script = document.createElement('script');
   script.src = chrome.runtime.getURL('injected.js');
-  script.onload = function() { this.remove(); };
+  script.onload = function () { this.remove(); };
   (document.head || document.documentElement).appendChild(script);
 
   // Hotkey State
@@ -87,7 +88,7 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
       cachedCells = event.data.cells || [];
       while (pendingGetCellsCallbacks.length > 0) {
         const callback = pendingGetCellsCallbacks.shift();
-        try { callback({ cells: cachedCells }); } catch (e) {}
+        try { callback({ cells: cachedCells }); } catch (e) { }
       }
       if (pendingQuickCopy) {
         handleQuickCopy(cachedCells);
@@ -101,6 +102,98 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
       if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
       if (overlayIframe && event.source !== overlayIframe.contentWindow) return;
       copyTextToClipboard(event.data.text);
+    } else if (event.data.type === 'PROMPTPACK_TAKE_SNAPSHOT') {
+      // Take a snapshot: fetch fresh cells and persist them
+      if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+      const requestId = event.data.requestId;
+
+      const onCells = (response) => {
+        const cells = response.cells || [];
+        snapshotCells = cells.map(c => ({
+          path: c.path,
+          relative_path: c.relative_path,
+          content: c.content || "",
+          output: c.output || ""
+        }));
+        console.log("PromptPack content: Snapshot taken,", snapshotCells.length, "cells stored");
+        if (overlayIframe && overlayIframe.contentWindow) {
+          overlayIframe.contentWindow.postMessage({
+            type: "PROMPTPACK_SNAPSHOT_RESPONSE",
+            requestId: requestId,
+            payload: { success: true, cellCount: snapshotCells.length }
+          }, "*");
+        }
+      };
+
+      let resolved = false;
+      const wrappedCallback = (response) => { if (!resolved) { resolved = true; onCells(response); } };
+      pendingGetCellsCallbacks.push(wrappedCallback);
+      requestCells();
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const idx = pendingGetCellsCallbacks.indexOf(wrappedCallback);
+          if (idx > -1) pendingGetCellsCallbacks.splice(idx, 1);
+          onCells({ cells: cachedCells });
+        }
+      }, 5000);
+    } else if (event.data.type === 'PROMPTPACK_GET_SNAPSHOT') {
+      // Return the persisted snapshot to the iframe
+      if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+      const requestId = event.data.requestId;
+      if (overlayIframe && overlayIframe.contentWindow) {
+        overlayIframe.contentWindow.postMessage({
+          type: "PROMPTPACK_SNAPSHOT_RESPONSE",
+          requestId: requestId,
+          payload: { cells: snapshotCells || [] }
+        }, "*");
+      }
+    } else if (event.data.type === 'PROMPTPACK_CLEAR_SNAPSHOT') {
+      // Clear the persisted snapshot
+      if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+      snapshotCells = null;
+      console.log("PromptPack content: Snapshot cleared");
+    } else if (event.data.type === 'SHOW_TOAST') {
+      // Show a toast notification
+      if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+      showToast(event.data.text || "Action successful", event.data.isError || false);
+    } else if (event.data.type === 'PROMPTPACK_GET_CELLS') {
+      // Handle cell requests from the extension iframe
+      if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+
+      const requestId = event.data.requestId;
+
+      const sendCellsToIframe = (cells) => {
+        try {
+          if (overlayIframe && overlayIframe.contentWindow) {
+            overlayIframe.contentWindow.postMessage({
+              type: "PROMPTPACK_CELLS_RESPONSE",
+              requestId: requestId,
+              payload: { cells: cells }
+            }, "*");
+          }
+        } catch (e) {
+          console.error("PromptPack content: Failed to send cells to iframe", e);
+        }
+      };
+
+      let resolved = false;
+      const wrappedCallback = (response) => {
+        if (!resolved) {
+          resolved = true;
+          sendCellsToIframe(response.cells || []);
+        }
+      };
+      pendingGetCellsCallbacks.push(wrappedCallback);
+      requestCells();
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const idx = pendingGetCellsCallbacks.indexOf(wrappedCallback);
+          if (idx > -1) pendingGetCellsCallbacks.splice(idx, 1);
+          sendCellsToIframe(cachedCells.length > 0 ? cachedCells : []);
+        }
+      }, 5000);
     }
   });
 

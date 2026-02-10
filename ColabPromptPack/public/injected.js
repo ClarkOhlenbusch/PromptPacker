@@ -1,6 +1,6 @@
 // PromptPack: Injected Script to access Colab Internals
 // This script only extracts cell data - diff logic is handled in the React app
-(function() {
+(function () {
   console.log("PromptPack: Injected script running in page context.");
 
   const COLAB_ORIGIN = "https://colab.research.google.com";
@@ -78,13 +78,9 @@
   }
 
   function extractCellsFromMemory() {
-    const colabCells = tryColabInternalAPI();
-    if (colabCells && colabCells.length > 0) {
-      return colabCells;
-    }
-
-    // Fallback to Monaco
+    // PRIORITY 1: Try Monaco first (has LIVE editor content, updates on every keystroke)
     if (window.monaco && window.monaco.editor) {
+      console.log("PromptPack: Extracting cells from Monaco (live data)");
       const models = window.monaco.editor.getModels();
       const validModels = models.filter(model => {
         const lang = model.getLanguageId();
@@ -98,71 +94,85 @@
         return true;
       });
 
-      const sortedModels = validModels.sort((a, b) => {
-        const getLastNum = (uri) => parseInt(uri.path.split('/').pop()) || 0;
-        return getLastNum(a.uri) - getLastNum(b.uri);
-      });
+      if (validModels.length > 0) {
+        const sortedModels = validModels.sort((a, b) => {
+          const getLastNum = (uri) => parseInt(uri.path.split('/').pop()) || 0;
+          return getLastNum(a.uri) - getLastNum(b.uri);
+        });
 
-      // Try to match models to DOM cells for output extraction
-      const editorInstances = window.monaco.editor.getEditors ? window.monaco.editor.getEditors() : [];
-      const modelToCellMap = new Map();
-      const modelContentMap = new Map();
-      
-      sortedModels.forEach((model, idx) => {
-        modelContentMap.set(model.getValue().trim().substring(0, 200), { model, index: idx });
-      });
+        // Try to match models to DOM cells for output extraction
+        const editorInstances = window.monaco.editor.getEditors ? window.monaco.editor.getEditors() : [];
+        const modelToCellMap = new Map();
+        const modelContentMap = new Map();
 
-      editorInstances.forEach(editorInstance => {
-        try {
-          const model = editorInstance.getModel();
-          if (!model) return;
-          const fingerprint = model.getValue().trim().substring(0, 200);
-          const modelInfo = modelContentMap.get(fingerprint);
-          if (modelInfo) {
-            const domNode = editorInstance.getDomNode();
-            if (domNode) {
-              let cellContainer = domNode;
-              for (let i = 0; i < 15 && cellContainer; i++) {
-                cellContainer = cellContainer.parentElement;
-                if (!cellContainer) break;
-                const isCell = cellContainer.classList.contains('cell') ||
-                               cellContainer.hasAttribute('data-cell-id') ||
-                               cellContainer.tagName.toLowerCase() === 'colab-cell';
-                if (isCell) {
-                  modelToCellMap.set(modelInfo.index, cellContainer);
-                  break;
+        sortedModels.forEach((model, idx) => {
+          modelContentMap.set(model.getValue().trim().substring(0, 200), { model, index: idx });
+        });
+
+        editorInstances.forEach(editorInstance => {
+          try {
+            const model = editorInstance.getModel();
+            if (!model) return;
+            const fingerprint = model.getValue().trim().substring(0, 200);
+            const modelInfo = modelContentMap.get(fingerprint);
+            if (modelInfo) {
+              const domNode = editorInstance.getDomNode();
+              if (domNode) {
+                let cellContainer = domNode;
+                for (let i = 0; i < 15 && cellContainer; i++) {
+                  cellContainer = cellContainer.parentElement;
+                  if (!cellContainer) break;
+                  const isCell = cellContainer.classList.contains('cell') ||
+                    cellContainer.hasAttribute('data-cell-id') ||
+                    cellContainer.tagName.toLowerCase() === 'colab-cell';
+                  if (isCell) {
+                    modelToCellMap.set(modelInfo.index, cellContainer);
+                    break;
+                  }
                 }
               }
             }
-          }
-        } catch (e) {}
-      });
+          } catch (e) { }
+        });
 
-      return sortedModels.map((model, index) => {
-        const content = model.getValue();
-        let outputText = "";
-        const domCell = modelToCellMap.get(index);
-        if (domCell) {
-          const outputArea = domCell.querySelector('.output, .output-area, [class*="output"]');
-          if (outputArea) {
-            outputText = outputArea.innerText.trim();
-            if (outputText.length > 5000) {
-              outputText = outputText.substring(0, 5000) + "\n... [Output Truncated] ...";
+        const cells = sortedModels.map((model, index) => {
+          const content = model.getValue();
+          let outputText = "";
+          const domCell = modelToCellMap.get(index);
+          if (domCell) {
+            const outputArea = domCell.querySelector('.output, .output-area, [class*="output"]');
+            if (outputArea) {
+              outputText = outputArea.innerText.trim();
+              if (outputText.length > 5000) {
+                outputText = outputText.substring(0, 5000) + "\n... [Output Truncated] ...";
+              }
             }
           }
-        }
-        return {
-          path: `cell_${index}`,
-          relative_path: `Cell ${index + 1}`,
-          is_dir: false,
-          size: content.length,
-          line_count: model.getLineCount(),
-          content,
-          output: outputText
-        };
-      });
+          return {
+            path: `cell_${index}`,
+            relative_path: `Cell ${index + 1}`,
+            is_dir: false,
+            size: content.length,
+            line_count: model.getLineCount(),
+            content,
+            output: outputText
+          };
+        });
+
+        console.log("PromptPack: Extracted", cells.length, "cells from Monaco");
+        return cells;
+      }
     }
 
+    // PRIORITY 2: Fallback to Colab internal API (STALE data, only updates on execution/save)
+    console.log("PromptPack: Monaco not available, falling back to Colab internal API (may be stale)");
+    const colabCells = tryColabInternalAPI();
+    if (colabCells && colabCells.length > 0) {
+      console.log("PromptPack: Extracted", colabCells.length, "cells from Colab API");
+      return colabCells;
+    }
+
+    console.warn("PromptPack: No cells found via any extraction method");
     return [];
   }
 })();

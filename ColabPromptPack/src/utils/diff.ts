@@ -13,18 +13,18 @@ export interface DiffLine {
 export function computeDiff(oldContent: string, newContent: string): DiffLine[] {
   const oldLines = oldContent.split('\n');
   const newLines = newContent.split('\n');
-  
+
   // Use fast-diff on joined lines with unique separator
   const SEP = '\x00';
   const result = fastDiff(oldLines.join(SEP), newLines.join(SEP));
-  
+
   const diffLines: DiffLine[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;
-  
+
   for (const [type, text] of result) {
     const lines = text.split(SEP);
-    
+
     for (const line of lines) {
       if (type === fastDiff.EQUAL) {
         diffLines.push({ type: 'unchanged', line, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
@@ -35,6 +35,6 @@ export function computeDiff(oldContent: string, newContent: string): DiffLine[] 
       }
     }
   }
-  
+
   return diffLines;
 }

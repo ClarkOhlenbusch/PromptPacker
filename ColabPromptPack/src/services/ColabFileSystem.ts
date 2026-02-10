@@ -31,73 +31,103 @@ interface CellData {
   output?: string;
 }
 
+/** Incrementing request ID for message correlation */
+let nextRequestId = 1;
+
 /**
- * Type guard to check if the Chrome extension API is available.
- * This is the proper way to handle the chrome global without @ts-ignore.
+ * Request cells from the content script via postMessage through the parent window.
  */
-function isChromeExtensionContext(): boolean {
-  return (
-    typeof chrome !== "undefined" &&
-    typeof chrome.tabs !== "undefined" &&
-    typeof chrome.runtime !== "undefined"
-  );
+async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
+  const requestId = nextRequestId++;
+  const TIMEOUT_MS = 10000;
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const handleResponse = (event: MessageEvent) => {
+      if (
+        event.data?.type === "PROMPTPACK_CELLS_RESPONSE" &&
+        event.data?.requestId === requestId
+      ) {
+        if (!settled) {
+          settled = true;
+          window.removeEventListener("message", handleResponse);
+          resolve(event.data.payload ?? null);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleResponse);
+
+    window.parent.postMessage(
+      { type: "PROMPTPACK_GET_CELLS", requestId },
+      "*"
+    );
+
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        window.removeEventListener("message", handleResponse);
+        console.error("Colab iframe: GET_CELLS timed out after", TIMEOUT_MS, "ms");
+        resolve(null);
+      }
+    }, TIMEOUT_MS);
+  });
 }
 
 /**
- * Helper to query the active tab and send a message.
- * Encapsulates Chrome API interaction with proper typing.
+ * Send a snapshot command to the content script and wait for acknowledgement.
  */
-async function sendMessageToActiveTab<T>(message: { type: string }): Promise<T | null> {
-  if (!isChromeExtensionContext()) {
-    console.error("Colab: Not running in Chrome extension context");
-    return null;
-  }
+async function sendSnapshotCommand(type: string): Promise<any> {
+  const requestId = nextRequestId++;
+  const TIMEOUT_MS = 10000;
 
   return new Promise((resolve) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const activeTab = tabs[0];
-      if (!activeTab?.id) {
-        console.error("Colab: No active tab found.");
-        resolve(null);
-        return;
-      }
+    let settled = false;
 
-      chrome.tabs.sendMessage(activeTab.id, message, (response: T) => {
-        if (chrome.runtime.lastError) {
-          console.error("Colab: Chrome runtime error:", chrome.runtime.lastError.message);
-          resolve(null);
-          return;
+    const handleResponse = (event: MessageEvent) => {
+      if (
+        event.data?.type === "PROMPTPACK_SNAPSHOT_RESPONSE" &&
+        event.data?.requestId === requestId
+      ) {
+        if (!settled) {
+          settled = true;
+          window.removeEventListener("message", handleResponse);
+          resolve(event.data.payload ?? null);
         }
-        resolve(response);
-      });
-    });
+      }
+    };
+
+    window.addEventListener("message", handleResponse);
+
+    window.parent.postMessage({ type, requestId }, "*");
+
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        window.removeEventListener("message", handleResponse);
+        console.error("Colab iframe: Snapshot command timed out:", type);
+        resolve(null);
+      }
+    }, TIMEOUT_MS);
   });
 }
 
 export class ColabFileSystem implements IFileSystem {
   private cellContentCache: Map<string, string> = new Map();
-  private snapshot: Map<string, CellVersion> = new Map();
 
   async scanProject(_path: string): Promise<FileEntry[]> {
-    console.log("Colab: Scanning notebook cells...");
+    const response = await requestCellsFromContentScript();
 
-    const response = await sendMessageToActiveTab<CellsResponse>({ type: "GET_CELLS" });
-
-    if (!response) {
-      return [];
-    }
-
+    if (!response) return [];
     if (response.error) {
       console.error("Colab: Error from content script:", response.error);
       return [];
     }
-
     if (!response.cells || !Array.isArray(response.cells)) {
-      console.warn("Colab: No cells received from content script");
+      console.warn("Colab: No cells received");
       return [];
     }
-
-    console.log("Received cells from content script", response.cells.length, "cells");
 
     // Cache the content
     this.cellContentCache.clear();
@@ -107,12 +137,12 @@ export class ColabFileSystem implements IFileSystem {
       }
     });
 
-    // Auto-snapshot on first scan if no snapshot exists
-    if (this.snapshot.size === 0) {
-      this.takeSnapshotFromCells(response.cells);
+    // Auto-snapshot on first scan if no snapshot exists in the content script
+    const existingSnapshot = await sendSnapshotCommand("PROMPTPACK_GET_SNAPSHOT");
+    if (!existingSnapshot?.cells || existingSnapshot.cells.length === 0) {
+      await sendSnapshotCommand("PROMPTPACK_TAKE_SNAPSHOT");
     }
 
-    // Map cells to FileEntry format
     return response.cells.map((cell) => ({
       path: cell.path,
       relative_path: cell.relative_path,
@@ -132,61 +162,67 @@ export class ColabFileSystem implements IFileSystem {
     return "Google Colab Notebook";
   }
 
-  private takeSnapshotFromCells(cells: CellData[]) {
-    const timestamp = Date.now();
-    this.snapshot.clear();
-    cells.forEach((cell) => {
-      this.snapshot.set(cell.path, {
-        content: cell.content || "",
-        output: cell.output || "",
-        timestamp,
-      });
-    });
-  }
-
   async takeSnapshot(): Promise<boolean> {
-    console.log("Colab: Taking snapshot...");
-
-    const response = await sendMessageToActiveTab<CellsResponse>({ type: "GET_CELLS" });
-
-    if (!response?.cells) {
-      return false;
-    }
-
-    this.takeSnapshotFromCells(response.cells);
-    return true;
+    const result = await sendSnapshotCommand("PROMPTPACK_TAKE_SNAPSHOT");
+    return result?.success ?? false;
   }
 
   async getDiffs(): Promise<CellDiff[]> {
-    console.log("Colab: Getting diffs...");
+    // 1. Get the persisted snapshot from the content script
+    const snapshotResult = await sendSnapshotCommand("PROMPTPACK_GET_SNAPSHOT");
+    const snapshotCells: CellData[] = snapshotResult?.cells ?? [];
 
-    const response = await sendMessageToActiveTab<CellsResponse>({ type: "GET_CELLS" });
-
-    if (!response?.cells || !Array.isArray(response.cells)) {
+    if (snapshotCells.length === 0) {
+      console.warn("Colab: No snapshot available for diffing");
       return [];
     }
 
+    // Build a lookup map from the snapshot
+    const snapshotMap = new Map<string, CellData>();
+    snapshotCells.forEach((cell) => {
+      snapshotMap.set(cell.path, cell);
+    });
+
+    // 2. Get fresh current cells
+    const response = await requestCellsFromContentScript();
+    if (!response?.cells || !Array.isArray(response.cells)) {
+      console.warn("Colab: No current cells received for diffing");
+      return [];
+    }
+
+    // 3. Compare each current cell against the snapshot
     const diffs: CellDiff[] = [];
     const timestamp = Date.now();
 
-    response.cells.forEach((cell) => {
-      const prev = this.snapshot.get(cell.path);
+    for (const cell of response.cells) {
+      const prev = snapshotMap.get(cell.path);
+
       if (prev && prev.content !== cell.content) {
-        diffs.push({
-          path: cell.path,
-          relative_path: cell.relative_path,
-          previous: prev,
-          current: { content: cell.content, output: cell.output || "", timestamp },
-          diff: computeDiff(prev.content, cell.content),
-        });
+        try {
+          const cellDiff = computeDiff(prev.content, cell.content);
+
+          diffs.push({
+            path: cell.path,
+            relative_path: cell.relative_path,
+            previous: {
+              content: prev.content,
+              output: prev.output || "",
+              timestamp: 0, // Snapshot timestamp not tracked
+            },
+            current: { content: cell.content, output: cell.output || "", timestamp },
+            diff: cellDiff,
+          });
+        } catch (e) {
+          console.error(`Colab: Error diffing cell ${cell.relative_path}:`, e);
+        }
       }
-    });
+    }
 
     return diffs;
   }
 
   async clearHistory(_cellPath?: string): Promise<boolean> {
-    this.snapshot.clear();
+    window.parent.postMessage({ type: "PROMPTPACK_CLEAR_SNAPSHOT" }, "*");
     return true;
   }
 }

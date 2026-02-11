@@ -12,7 +12,7 @@
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-why-promptpacker">Why?</a> •
   <a href="#-features">Features</a> •
-  <a href="https://promptpacker.dev">Website</a>
+  <a href="https://prompt-packer-one.vercel.app/">Website</a>
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ open PromptPacker.dmg
 ### Other Platforms
 Download the latest release for your OS from [GitHub Releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases).
 
-**Or visit [promptpacker.dev](https://promptpacker.dev)** for auto-detected downloads.
+**Or visit [prompt-packer-one.vercel.app](https://prompt-packer-one.vercel.app/)** for auto-detected downloads.
 
 ---
 
@@ -102,14 +102,14 @@ Bring PromptPacker into your Google Colab workflow.
 
 Marketing site with auto-updating downloads from GitHub Releases.
 
-**Live at:** [promptpacker.dev](https://promptpacker.dev)
+**Live at:** [prompt-packer-one.vercel.app](https://prompt-packer-one.vercel.app/)
 
 ---
 
 ## 📸 Screenshots
 
 <p align="center">
-  <i>Screenshots coming soon — see <a href="https://promptpacker.dev">promptpacker.dev</a> for live demo</i>
+  <i>Screenshots coming soon — see <a href="https://prompt-packer-one.vercel.app/">prompt-packer-one.vercel.app</a> for live demo</i>
 </p>
 
 ---

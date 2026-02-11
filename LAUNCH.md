@@ -60,7 +60,7 @@ What PromptPacker does:
 Also has a desktop app (Rust/Tauri) for local projects, but honestly I built the extension first because that's where I was feeling the pain every day.
 
 Chrome Web Store: [link when ready]
-Site: https://promptpacker.dev
+Site: https://prompt-packer-one.vercel.app/
 GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
 
 Tech: React, Vite, Chrome Manifest V3, Rust/Tauri for desktop
@@ -135,7 +135,7 @@ It's free, open source, and I use it every single day.
 
 If you use Colab + ChatGPT/Claude, this will save you time.
 
-🌐 https://promptpacker.dev
+🌐 https://prompt-packer-one.vercel.app/
 ⭐ https://github.com/ClarkOhlenbusch/PromptPacker
 🧩 Chrome Web Store: [link]
 
@@ -178,7 +178,7 @@ The extension injects into Colab's DOM and gives you a file-tree UI in the sideb
 Also has a desktop app (Rust/Tauri) for local projects with the same features.
 
 Chrome Web Store: [link]
-Site: https://promptpacker.dev
+Site: https://prompt-packer-one.vercel.app/
 GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
 
 Built this because I was feeling the pain daily. Hope it helps some of you too!
@@ -276,7 +276,7 @@ The FileSystem abstraction is the cool part — same React frontend works with:
 • Extension: DOM scraping via content script + postMessage
 
 GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
-Site: https://promptpacker.dev
+Site: https://prompt-packer-one.vercel.app/
 
 Curious what Rustaceans think of the Tauri architecture!
 ```
@@ -296,7 +296,7 @@ Solution: Treat Colab cells as selectable "files" — pick what you want, see di
 
 Built it for my own Colab → ChatGPT workflow. Hope it helps others too.
 
-https://promptpacker.dev
+https://prompt-packer-one.vercel.app/
 Chrome Web Store: [link]
 ```
 
@@ -311,7 +311,7 @@ Injects into Colab, treats cells as a virtual filesystem, has global hotkeys, di
 
 Also has a Rust/Tauri desktop app for local projects.
 
-Check it out: https://promptpacker.dev
+Check it out: https://prompt-packer-one.vercel.app/
 ```
 
 ---
@@ -378,7 +378,7 @@ So I built PromptPacker. It's a Chrome extension that:
 I use it every day. Also built a desktop app (Rust + Tauri) for local projects.
 
 Check it out:
-• Site: https://promptpacker.dev
+• Site: https://prompt-packer-one.vercel.app/
 • Chrome Web Store: [link]
 • GitHub: https://github.com/ClarkOhlenbusch/PromptPacker
 

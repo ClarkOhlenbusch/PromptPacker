@@ -9,7 +9,8 @@ import {
    Layers,
    CheckCircle2,
    Github,
-   Star
+   Star,
+   Chrome
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
@@ -113,9 +114,9 @@ export default function App() {
 
          {/* Tech Background Grid */}
          <div className="fixed inset-0 pointer-events-none z-0">
-             <div className="absolute inset-0 tech-grid opacity-40" />
-             <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#0069C3]/5 blur-[120px] rounded-full" />
-             <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#0069C3]/5 blur-[100px] rounded-full" />
+            <div className="absolute inset-0 tech-grid opacity-40" />
+            <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#0069C3]/5 blur-[120px] rounded-full" />
+            <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#0069C3]/5 blur-[100px] rounded-full" />
          </div>
 
          {/* Navbar */}
@@ -140,6 +141,9 @@ export default function App() {
                         {formattedStars}
                      </span>
                   </a>
+                  <a href="https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll?utm_source=item-share-cb" target="_blank" rel="noopener noreferrer" className="hidden lg:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
+                     <Chrome size={16} /> Extension
+                  </a>
                   <motion.a
                      whileHover={{ scale: 1.05 }}
                      whileTap={{ scale: 0.95 }}
@@ -163,8 +167,8 @@ export default function App() {
             <div className="max-w-5xl mx-auto text-center space-y-8">
                <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-[#0069C3] text-xs font-mono font-medium tracking-wide">
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#0069C3]"></span>
+                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                     <span className="relative inline-flex rounded-full h-2 w-2 bg-[#0069C3]"></span>
                   </span>
                   V{latestVersion.replace('v', '')} NOW AVAILABLE
                </motion.div>
@@ -189,59 +193,69 @@ export default function App() {
                      <span>Download for {osName}</span>
                      <ChevronRight size={20} className="opacity-50 group-hover:translate-x-1 transition-transform" />
                   </a>
+                  <a
+                     href="https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll?utm_source=item-share-cb"
+                     target="_blank"
+                     rel="noopener noreferrer"
+                     className="px-10 py-5 bg-white text-[#2A3947] border border-slate-200 rounded-xl font-bold text-lg shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 w-full sm:w-auto justify-center group"
+                  >
+                     <Chrome size={24} className="text-[#0069C3]" />
+                     <span>Chrome Extension</span>
+                     <ChevronRight size={20} className="opacity-50 group-hover:translate-x-1 transition-transform text-slate-300" />
+                  </a>
                </motion.div>
-               
+
                <motion.div variants={itemVariants} className="pt-12">
-                   <div className="relative mx-auto max-w-5xl bg-white rounded-xl overflow-hidden border border-slate-200 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)]">
-                       {/* Window Header */}
-                       <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
-                           <div className="flex gap-2">
-                               <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
-                               <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
-                               <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
+                  <div className="relative mx-auto max-w-5xl bg-white rounded-xl overflow-hidden border border-slate-200 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)]">
+                     {/* Window Header */}
+                     <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
+                        <div className="flex gap-2">
+                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
+                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
+                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">PromptPacker — Desktop</div>
+                        <div className="w-12"></div>
+                     </div>
+
+                     <div className="flex h-[400px]">
+                        {/* Sidebar Mockup */}
+                        <div className="w-64 border-r border-slate-100 bg-white p-4 space-y-4 hidden md:block">
+                           <div className="flex items-center justify-between">
+                              <div className="text-[10px] font-bold text-slate-400 uppercase">Files</div>
+                              <div className="w-4 h-4 rounded bg-slate-100"></div>
                            </div>
-                           <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">PromptPacker — Desktop</div>
-                           <div className="w-12"></div>
-                       </div>
-                       
-                       <div className="flex h-[400px]">
-                           {/* Sidebar Mockup */}
-                           <div className="w-64 border-r border-slate-100 bg-white p-4 space-y-4 hidden md:block">
-                               <div className="flex items-center justify-between">
-                                   <div className="text-[10px] font-bold text-slate-400 uppercase">Files</div>
-                                   <div className="w-4 h-4 rounded bg-slate-100"></div>
-                               </div>
-                               <div className="space-y-2">
-                                   {[1, 2, 3, 4, 5, 6].map(i => (
-                                       <div key={i} className="flex items-center gap-2">
-                                           <div className={`w-3 h-3 rounded ${i === 2 ? 'bg-blue-100' : 'bg-slate-100'}`}></div>
-                                           <div className={`h-2 rounded ${i === 2 ? 'bg-blue-100 w-24' : 'bg-slate-100 w-32'}`}></div>
-                                       </div>
-                                   ))}
-                               </div>
+                           <div className="space-y-2">
+                              {[1, 2, 3, 4, 5, 6].map(i => (
+                                 <div key={i} className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded ${i === 2 ? 'bg-blue-100' : 'bg-slate-100'}`}></div>
+                                    <div className={`h-2 rounded ${i === 2 ? 'bg-blue-100 w-24' : 'bg-slate-100 w-32'}`}></div>
+                                 </div>
+                              ))}
                            </div>
-                           
-                           {/* Main Content Mockup */}
-                           <div className="flex-1 p-8 text-left space-y-6 bg-white">
-                               <div className="space-y-3">
-                                   <div className="h-3 w-32 bg-slate-100 rounded"></div>
-                                   <div className="h-24 w-full bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
-                                       <div className="h-2 w-3/4 bg-slate-100 rounded"></div>
-                                       <div className="h-2 w-1/2 bg-slate-100 rounded mt-2"></div>
-                                   </div>
-                               </div>
-                               <div className="space-y-3">
-                                   <div className="h-3 w-24 bg-slate-100 rounded"></div>
-                                   <div className="h-16 w-full bg-white border border-slate-200 rounded-lg shadow-sm"></div>
-                               </div>
-                               <div className="pt-4 flex justify-end">
-                                   <div className="px-6 py-3 bg-[#0069C3] rounded-lg text-white text-xs font-bold font-display shadow-lg shadow-blue-500/20">
-                                       GENERATE PROMPT
-                                   </div>
-                               </div>
+                        </div>
+
+                        {/* Main Content Mockup */}
+                        <div className="flex-1 p-8 text-left space-y-6 bg-white">
+                           <div className="space-y-3">
+                              <div className="h-3 w-32 bg-slate-100 rounded"></div>
+                              <div className="h-24 w-full bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                                 <div className="h-2 w-3/4 bg-slate-100 rounded"></div>
+                                 <div className="h-2 w-1/2 bg-slate-100 rounded mt-2"></div>
+                              </div>
                            </div>
-                       </div>
-                   </div>
+                           <div className="space-y-3">
+                              <div className="h-3 w-24 bg-slate-100 rounded"></div>
+                              <div className="h-16 w-full bg-white border border-slate-200 rounded-lg shadow-sm"></div>
+                           </div>
+                           <div className="pt-4 flex justify-end">
+                              <div className="px-6 py-3 bg-[#0069C3] rounded-lg text-white text-xs font-bold font-display shadow-lg shadow-blue-500/20">
+                                 GENERATE PROMPT
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
                </motion.div>
             </div>
          </motion.header>
@@ -258,25 +272,25 @@ export default function App() {
                      <p className="text-lg text-slate-500 leading-relaxed">
                         Traditional tools blindly concatenate files. PromptPacker parses the Abstract Syntax Tree (AST) of your code to understand its structure. It keeps signatures, types, and interfaces while folding implementation details.
                      </p>
-                     
+
                      <div className="grid sm:grid-cols-2 gap-6 pt-4">
-                         <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
-                             <div className="w-10 h-10 rounded bg-blue-50 flex items-center justify-center mb-3">
-                                 <Layers size={20} className="text-[#0069C3]" />
-                             </div>
-                             <h4 className="font-bold text-[#2A3947] mb-1">Structural Integrity</h4>
-                             <p className="text-sm text-slate-500">Preserves class hierarchies and function signatures.</p>
-                         </div>
-                         <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
-                             <div className="w-10 h-10 rounded bg-cyan-50 flex items-center justify-center mb-3">
-                                 <Zap size={20} className="text-cyan-600" />
-                             </div>
-                             <h4 className="font-bold text-[#2A3947] mb-1">Token Efficiency</h4>
-                             <p className="text-sm text-slate-500">Reduces context usage by up to 80% without losing meaning.</p>
-                         </div>
+                        <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
+                           <div className="w-10 h-10 rounded bg-blue-50 flex items-center justify-center mb-3">
+                              <Layers size={20} className="text-[#0069C3]" />
+                           </div>
+                           <h4 className="font-bold text-[#2A3947] mb-1">Structural Integrity</h4>
+                           <p className="text-sm text-slate-500">Preserves class hierarchies and function signatures.</p>
+                        </div>
+                        <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
+                           <div className="w-10 h-10 rounded bg-cyan-50 flex items-center justify-center mb-3">
+                              <Zap size={20} className="text-cyan-600" />
+                           </div>
+                           <h4 className="font-bold text-[#2A3947] mb-1">Token Efficiency</h4>
+                           <p className="text-sm text-slate-500">Reduces context usage by up to 80% without losing meaning.</p>
+                        </div>
                      </div>
                   </div>
-                  
+
                   <div className="relative">
                      <div className="absolute -inset-1 bg-gradient-to-r from-[#0069C3] to-cyan-500 rounded-2xl blur opacity-10"></div>
                      <div className="relative bg-white rounded-xl overflow-hidden border border-slate-200 shadow-2xl">
@@ -292,7 +306,7 @@ export default function App() {
                               </div>
                            </div>
                         </div>
-                        
+
                         {/* App Output Content */}
                         <div className="p-6 bg-slate-50 font-mono text-[11px] text-slate-500 text-left h-[260px] overflow-hidden">
                            <div className="space-y-4">
@@ -310,7 +324,7 @@ export default function App() {
                               </div>
                            </div>
                         </div>
-                        
+
                         {/* App Output Footer */}
                         <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
                            <div className="px-4 py-2 bg-[#0069C3] text-white rounded text-[11px] font-bold shadow-sm">

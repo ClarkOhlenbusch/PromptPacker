@@ -149,18 +149,19 @@ export default function App() {
     const skeletonFiles = files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir);
     const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir);
 
+    if (tokenCountDebounceTimer.current !== null) {
+      window.clearTimeout(tokenCountDebounceTimer.current);
+      tokenCountDebounceTimer.current = null;
+    }
+
     if (selectedFiles.length === 0 && !preamble.trim() && !goal.trim()) {
+      ++tokenCountRequestId.current;
       setTokenCount(0);
       setCountingTokens(false);
       return;
     }
 
     const requestId = ++tokenCountRequestId.current;
-
-    if (tokenCountDebounceTimer.current !== null) {
-      window.clearTimeout(tokenCountDebounceTimer.current);
-      tokenCountDebounceTimer.current = null;
-    }
 
     tokenCountDebounceTimer.current = window.setTimeout(() => {
       tokenCountDebounceTimer.current = null;

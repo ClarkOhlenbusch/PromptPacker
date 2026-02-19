@@ -55,6 +55,8 @@ export default function App() {
   // Token counting
   const [tokenCount, setTokenCount] = useState<number | null>(null);
   const [countingTokens, setCountingTokens] = useState(false);
+  // Cache: path → { tokens, size } — invalidated when file size changes
+  const tokenCacheRef = useRef<Map<string, { tokens: number; size: number }>>(new Map());
 
   // Diff tracking
   const [fileDiffs, setFileDiffs] = useState<FileDiff[]>([]);
@@ -136,10 +138,15 @@ export default function App() {
     };
   }, [projectPath]);
 
+  // Clear token cache when switching projects
+  useEffect(() => {
+    tokenCacheRef.current.clear();
+  }, [projectPath]);
+
   // Count tokens when selection changes
   useEffect(() => {
-    const fullPaths = files.filter(f => tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
-    const skeletonPaths = files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir).map(f => f.path);
+    const fullFiles = files.filter(f => tier1Paths.has(f.path) && !f.is_dir);
+    const skeletonFiles = files.filter(f => selectedPaths.has(f.path) && !tier1Paths.has(f.path) && !f.is_dir);
     const selectedFiles = files.filter(f => selectedPaths.has(f.path) && !f.is_dir);
 
     if (selectedFiles.length === 0 && !preamble.trim() && !goal.trim()) {
@@ -158,6 +165,16 @@ export default function App() {
     tokenCountDebounceTimer.current = window.setTimeout(() => {
       tokenCountDebounceTimer.current = null;
       setCountingTokens(true);
+
+      // Returns cached token count for a file, or fetches and caches it.
+      // Uses file size as a cheap proxy for content changes.
+      const getTokens = async (file: FileEntry): Promise<number> => {
+        const cached = tokenCacheRef.current.get(file.path);
+        if (cached && cached.size === file.size) return cached.tokens;
+        const tokens: number = await invoke<number>("count_tokens_for_files", { paths: [file.path] });
+        tokenCacheRef.current.set(file.path, { tokens, size: file.size });
+        return tokens;
+      };
 
       void (async () => {
         try {
@@ -190,23 +207,15 @@ export default function App() {
             ? invoke<number>("count_tokens", { text: overhead })
             : Promise.resolve(0);
 
-          const fullPromise: Promise<number> = fullPaths.length > 0
-            ? invoke<number>("count_tokens_for_files", { paths: fullPaths })
-            : Promise.resolve(0);
-
-          // For skeleton files, count full tokens then apply a fixed ratio.
-          const skeletonPromise: Promise<number> = skeletonPaths.length > 0
-            ? invoke<number>("count_tokens_for_files", { paths: skeletonPaths })
-            : Promise.resolve(0);
-
-          const [overheadTokens, fullTokens, skeletonFullTokens] = await Promise.all([
+          const [overheadTokens, fullTokenCounts, skeletonFullTokenCounts] = await Promise.all([
             overheadPromise,
-            fullPromise,
-            skeletonPromise,
+            Promise.all(fullFiles.map(getTokens)),
+            Promise.all(skeletonFiles.map(getTokens)),
           ]);
 
           if (requestId === tokenCountRequestId.current) {
-            const skeletonTokens = Math.round(skeletonFullTokens * 0.3);
+            const fullTokens = fullTokenCounts.reduce((a, b) => a + b, 0);
+            const skeletonTokens = Math.round(skeletonFullTokenCounts.reduce((a, b) => a + b, 0) * 0.3);
             setTokenCount(overheadTokens + estimatedTreeTokens + fullTokens + skeletonTokens);
           }
         } catch (e) {

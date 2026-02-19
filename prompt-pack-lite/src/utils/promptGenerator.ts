@@ -24,6 +24,10 @@ export async function generatePrompt(
 ): Promise<string> {
   const sections: string[] = [];
 
+  if (goal.trim()) {
+    sections.push("GOAL\n", goal, "\n\n");
+  }
+
   if (preamble.trim()) {
     sections.push("PREAMBLE\n", preamble, "\n\n");
   }
@@ -47,9 +51,10 @@ export async function generatePrompt(
     }
   }
 
-  const selectedFiles = allEntries.filter(
+  const rawSelectedFiles = allEntries.filter(
     (entry) => !entry.is_dir && effectiveSelectedPaths.has(entry.path)
   );
+  const selectedFiles = sortForAttention(rawSelectedFiles, tier1Paths);
 
   const fallbackFiles: string[] = [];
   const fullFiles = selectedFiles.filter((file) => tier1Paths.has(file.path));
@@ -179,10 +184,6 @@ export async function generatePrompt(
     sections.push(fileSections.join(""));
   }
 
-  if (goal.trim()) {
-    sections.push("GOAL\n", goal, "\n");
-  }
-
   if (fallbackFiles.length > 0) {
     const warningLines = fallbackFiles.map((file) => `// ! - ${file}`).join("\n");
     sections.push(
@@ -269,6 +270,65 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function scoreFile(file: FileEntry, isFull: boolean): number {
+  let score = 0;
+
+  // User tier: if the user explicitly marked it Full, they care more about it
+  if (isFull) score += 40;
+
+  const nameParts = file.relative_path.split('/');
+  const fileName = nameParts[nameParts.length - 1].toLowerCase();
+  const stem = fileName.replace(/\.[^.]+$/, '');
+  const ext = fileName.split('.').pop() ?? '';
+
+  // Entry point detection — architectural roots should be read first
+  const entryPoints = ['main', 'index', 'app', 'lib', 'mod', 'init', 'entry', 'server', 'client', 'core'];
+  if (entryPoints.includes(stem)) score += 30;
+
+  // Type/schema/interface files are high-signal for recency zone (model needs them when generating)
+  if (fileName.includes('.types.') || fileName.includes('.schema.') || fileName.includes('.interface.') || stem === 'types' || stem === 'schema') score += 20;
+
+  // Config files are architectural context
+  if (['json', 'toml', 'yaml', 'yml'].includes(ext) && !fileName.includes('lock')) score += 15;
+
+  // Test/spec files are low-signal — generated code doesn't depend on reading them
+  if (fileName.includes('.test.') || fileName.includes('.spec.') || fileName.includes('.stories.')) score -= 25;
+
+  // Lock files are noise
+  if (fileName.includes('lock')) score -= 40;
+
+  // Directory depth: shallower paths are more architectural
+  const depth = (file.relative_path.match(/\//g) ?? []).length;
+  score += Math.max(0, 12 - depth * 3);
+
+  return score;
+}
+
+// Applies a U-curve zone layout to combat "lost in the middle" attention degradation.
+//
+// Models pay more attention to content at the START (primacy) and END (recency) of context.
+// Strategy:
+//   - Highest-importance files → top (primacy zone)
+//   - Lowest-importance files  → middle (sacrificed to the dead zone)
+//   - Medium-importance files  → bottom (recency zone, right before GOAL)
+function sortForAttention(files: FileEntry[], tier1Paths: Set<string>): FileEntry[] {
+  if (files.length <= 3) {
+    // Not enough files for zone layout to matter — just sort descending
+    return [...files].sort((a, b) => scoreFile(b, tier1Paths.has(b.path)) - scoreFile(a, tier1Paths.has(a.path)));
+  }
+
+  const scored = files.map(f => ({ file: f, score: scoreFile(f, tier1Paths.has(f.path)) }));
+  scored.sort((a, b) => b.score - a.score);
+
+  // Divide into thirds: top → primacy, bottom → middle dead zone, mid → recency
+  const third = Math.ceil(scored.length / 3);
+  const primacy  = scored.slice(0, third).map(s => s.file);
+  const deadZone = scored.slice(scored.length - third).map(s => s.file);
+  const recency  = scored.slice(third, scored.length - third).map(s => s.file);
+
+  return [...primacy, ...deadZone, ...recency];
 }
 
 function compressCode(code: string): string {

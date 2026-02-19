@@ -454,6 +454,38 @@ pub fn extract_html_skeleton(content: &str, root: Node, source: &[u8]) -> String
     output.trim().to_string()
 }
 
+fn html_tag_name(node: Node, source: &[u8]) -> (Option<String>, bool) {
+    let mut cursor = node.walk();
+    let mut tag_name = None;
+    let mut is_self_closing = false;
+
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "start_tag" | "end_tag" | "self_closing_tag" => {
+                if child.kind() == "self_closing_tag" {
+                    is_self_closing = true;
+                }
+                let mut tag_cursor = child.walk();
+                for part in child.children(&mut tag_cursor) {
+                    if part.kind() == "tag_name" {
+                        tag_name = Some(get_node_text(part, source).to_string());
+                        break;
+                    }
+                }
+            }
+            "tag_name" => {
+                tag_name = Some(get_node_text(child, source).to_string());
+            }
+            _ => {}
+        }
+        if tag_name.is_some() {
+            break;
+        }
+    }
+
+    (tag_name, is_self_closing)
+}
+
 fn extract_html_skeleton_rec(output: &mut String, node: Node, source: &[u8], depth: usize) {
     let indent = "  ".repeat(depth);
 
@@ -470,21 +502,13 @@ fn extract_html_skeleton_rec(output: &mut String, node: Node, source: &[u8], dep
         }
         "element" => {
             let mut cursor = node.walk();
-            let mut tag_name = String::new();
+            let (tag_name_opt, is_self_closing) = html_tag_name(node, source);
+            let tag_name = tag_name_opt.unwrap_or_else(|| "element".to_string());
             let mut has_children = false;
             let mut child_elements = 0;
 
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "start_tag" => {
-                        let mut tag_cursor = child.walk();
-                        for part in child.children(&mut tag_cursor) {
-                            if part.kind() == "tag_name" {
-                                tag_name = get_node_text(part, source).to_string();
-                                break;
-                            }
-                        }
-                    }
                     "element" => {
                         has_children = true;
                         child_elements += 1;
@@ -502,6 +526,10 @@ fn extract_html_skeleton_rec(output: &mut String, node: Node, source: &[u8], dep
             output.push_str(&indent);
             output.push('<');
             output.push_str(&tag_name);
+            if is_self_closing {
+                output.push_str(" />\n");
+                return;
+            }
             output.push('>');
 
             let should_recurse = matches!(tag_name.as_str(), "html" | "head" | "body");

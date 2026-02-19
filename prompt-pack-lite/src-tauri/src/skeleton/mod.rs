@@ -31,6 +31,7 @@ pub mod go;
 pub mod python;
 pub mod rust_lang;
 pub mod typescript;
+pub mod c;
 
 use tree_sitter::{Language, Parser};
 
@@ -60,6 +61,7 @@ pub enum SupportedLanguage {
     JavaScriptJsx,
     Rust,
     Go,
+    C,
     Json,
     Css,
     Html,
@@ -76,6 +78,7 @@ impl SupportedLanguage {
             "jsx" => Some(Self::JavaScriptJsx),
             "rs" => Some(Self::Rust),
             "go" => Some(Self::Go),
+            "c" | "h" => Some(Self::C),
             "json" | "jsonc" => Some(Self::Json),
             "css" | "scss" | "less" => Some(Self::Css),
             "html" | "htm" => Some(Self::Html),
@@ -92,6 +95,7 @@ impl SupportedLanguage {
             Self::JavaScript | Self::JavaScriptJsx => tree_sitter_javascript::LANGUAGE.into(),
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
             Self::Go => tree_sitter_go::LANGUAGE.into(),
+            Self::C => tree_sitter_c::LANGUAGE.into(),
             Self::Json => tree_sitter_json::LANGUAGE.into(),
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Html => tree_sitter_html::LANGUAGE.into(),
@@ -155,11 +159,20 @@ pub fn skeletonize(
     let skeleton = match language {
         Some(lang) => {
             match extract_skeleton(content, lang, _file_path) {
-                Ok(s) => s,
-                Err(_) => fallback_compress(content, extension),
+                Ok(s) => {
+                    println!("DEBUG: extract_skeleton succeeded, len={}", s.len());
+                    s
+                },
+                Err(e) => {
+                    println!("DEBUG: extract_skeleton failed: {}", e);
+                    fallback_compress(content, extension)
+                },
             }
         }
-        None => fallback_compress(content, extension),
+        None => {
+            println!("DEBUG: No language detected for extension: {}", extension);
+            fallback_compress(content, extension)
+        },
     };
 
     let skeleton = cap_output(&skeleton, language);
@@ -195,6 +208,9 @@ fn extract_skeleton(content: &str, lang: SupportedLanguage, file_path: Option<&s
         SupportedLanguage::Go => {
             Ok(go::extract_skeleton(content, root, source))
         }
+        SupportedLanguage::C => {
+            Ok(c::extract_skeleton(content, root, source))
+        }
         SupportedLanguage::Json => {
             Ok(config::extract_json_skeleton(content, root, source))
         }
@@ -222,7 +238,7 @@ pub fn skeletonize_with_path(
     extension: &str,
     file_path: Option<&str>,
 ) -> SkeletonResult {
-    // Try new implementation first for Python and Rust
+    // Try new implementation first for supported languages
     let language = SupportedLanguage::from_extension(extension);
 
     if matches!(
@@ -230,6 +246,7 @@ pub fn skeletonize_with_path(
         Some(SupportedLanguage::Python)
             | Some(SupportedLanguage::Rust)
             | Some(SupportedLanguage::Go)
+            | Some(SupportedLanguage::C)
             | Some(SupportedLanguage::Json)
             | Some(SupportedLanguage::Css)
             | Some(SupportedLanguage::Html)

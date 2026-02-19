@@ -2,7 +2,11 @@
 //!
 //! Handles: package declarations, imports, type definitions, functions, methods,
 //! const/var declarations, interfaces, and doc comments.
+//! 
+//! Method family summarization: collapses repetitive accessor patterns like
+//! GetString, GetInt, GetBool into a single summary line.
 
+use std::collections::HashMap;
 use tree_sitter::Node;
 
 use crate::skeleton::common::{
@@ -11,63 +15,308 @@ use crate::skeleton::common::{
     MAX_CALL_EDGE_NAME_LEN, MAX_CALL_EDGE_NODES,
 };
 
+/// Minimum family size to trigger summarization
+const MIN_FAMILY_SIZE: usize = 4;
+
 // ============ Main Entry Point ============
 
 /// Extract skeleton from Go source code
 pub fn extract_skeleton(content: &str, root: Node, source: &[u8]) -> String {
-    let _ = content; // Reserved for future use (e.g., line counting)
+    let _ = content;
     let mut output = String::new();
-    extract_go_skeleton(&mut output, root, source, 0);
+    extract_go_skeleton_with_families(&mut output, root, source);
     output
 }
 
-// ============ Core Extraction ============
+// ============ Core Extraction with Method Family Detection ============
 
-fn extract_go_skeleton(output: &mut String, node: Node, source: &[u8], depth: usize) {
+fn extract_go_skeleton_with_families(output: &mut String, root: Node, source: &[u8]) {
+    // First pass: collect all methods grouped by receiver type
+    let mut methods_by_receiver: HashMap<String, Vec<MethodInfo>> = HashMap::new();
+    
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "method_declaration" {
+            if let Some(info) = extract_method_info(child, source) {
+                methods_by_receiver
+                    .entry(info.receiver.clone())
+                    .or_default()
+                    .push(info);
+            }
+        }
+    }
+    
+    // Detect families and build set of variant method names to skip
+    let families = detect_method_families(&methods_by_receiver);
+    let skip_variants: std::collections::HashSet<(String, String)> = families
+        .iter()
+        .flat_map(|f| {
+            f.variants
+                .iter()
+                .map(|v| (f.receiver.clone(), v.clone()))
+        })
+        .collect();
+    
+    // Second pass: emit skeleton, skipping variant methods and their doc comments
+    let mut cursor = root.walk();
+    let children: Vec<Node> = root.children(&mut cursor).collect();
+    let mut i = 0;
+    
+    while i < children.len() {
+        let child = children[i];
+
+        // Skip contiguous doc comments for a summarized variant method.
+        if child.kind() == "comment" {
+            let mut j = i;
+            while j < children.len() && children[j].kind() == "comment" {
+                j += 1;
+            }
+            if let Some(next) = children.get(j) {
+                if next.kind() == "method_declaration" {
+                    if let Some(info) = extract_method_info(*next, source) {
+                        if skip_variants.contains(&(info.receiver.clone(), info.name.clone())) {
+                            // Skip all comments plus the variant method.
+                            i = j + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        
+        match child.kind() {
+            "method_declaration" => {
+                if let Some(info) = extract_method_info(child, source) {
+                    if skip_variants.contains(&(info.receiver.clone(), info.name.clone())) {
+                        i += 1;
+                        continue;
+                    }
+                }
+                emit_method_with_family_check(output, child, source, &families);
+            }
+            _ => extract_go_node(output, child, source, 0),
+        }
+        i += 1;
+    }
+}
+
+struct MethodInfo {
+    receiver: String,
+    name: String,
+    signature: String,
+    call_edges: String,
+}
+
+fn extract_method_info(node: Node, source: &[u8]) -> Option<MethodInfo> {
+    let receiver_node = node.child_by_field_name("receiver")?;
+    let receiver = normalize_receiver(receiver_node, source);
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| get_node_text(n, source).to_string())?;
+    
+    let text = get_node_text(node, source);
+    let signature = if let Some(brace_pos) = text.find('{') {
+        truncate_line(text[..brace_pos].trim(), MAX_DEF_LINE_LEN)
+    } else {
+        truncate_line(text, MAX_DEF_LINE_LEN)
+    };
+    
+    let call_edges = collect_call_edges_string(node, source);
+    
+    Some(MethodInfo {
+        receiver,
+        name,
+        signature,
+        call_edges,
+    })
+}
+
+fn normalize_receiver(receiver_node: Node, source: &[u8]) -> String {
+    let mut cursor = receiver_node.walk();
+    for child in receiver_node.children(&mut cursor) {
+        if child.kind() == "parameter_declaration" {
+            if let Some(ty) = child.child_by_field_name("type") {
+                return get_node_text(ty, source).to_string();
+            }
+        }
+    }
+
+    let raw = get_node_text(receiver_node, source);
+    let raw = raw.trim().trim_start_matches('(').trim_end_matches(')').trim();
+    let mut parts = raw.split_whitespace();
+    let last = parts.next_back().unwrap_or(raw);
+    last.to_string()
+}
+
+fn collect_call_edges_string(node: Node, source: &[u8]) -> String {
+    let body = node.child_by_field_name("body");
+    let Some(body) = body else { return String::new() };
+    let calls = collect_go_calls(body, source);
+    if calls.entries.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from("// Calls: ");
+    s.push_str(&calls.entries.join(", "));
+    if calls.truncated {
+        s.push_str(", ...");
+    }
+    s
+}
+
+struct MethodFamily {
+    prefix: String,
+    receiver: String,
+    base_method: String,
+    variants: Vec<String>,
+}
+
+fn detect_method_families(methods_by_receiver: &HashMap<String, Vec<MethodInfo>>) -> Vec<MethodFamily> {
+    let mut families = Vec::new();
+    
+    for (receiver, methods) in methods_by_receiver {
+        // Common prefixes to detect families
+        for prefix in &["Get", "Set", "Is", "Has", "With", "Must"] {
+            let matching: Vec<&MethodInfo> = methods
+                .iter()
+                .filter(|m| m.name.starts_with(prefix) && m.name.len() > prefix.len())
+                .collect();
+            
+            if matching.len() >= MIN_FAMILY_SIZE {
+                // Find the base method (exact prefix match, e.g., "Get" for "GetString")
+                let base = methods.iter().find(|m| m.name == *prefix);
+                let base_name = base.map(|b| b.name.clone());
+                let mut variants: Vec<String> = matching
+                    .iter()
+                    .filter(|m| m.name != *prefix)
+                    .map(|m| m.name.clone())
+                    .collect();
+
+                if base_name.is_none() && !variants.is_empty() {
+                    // Promote the first variant to be the base so the family still emits.
+                    let promoted = variants.remove(0);
+                    if variants.len() + 1 >= MIN_FAMILY_SIZE {
+                        families.push(MethodFamily {
+                            prefix: prefix.to_string(),
+                            receiver: receiver.clone(),
+                            base_method: promoted,
+                            variants,
+                        });
+                    }
+                    continue;
+                }
+
+                let Some(base_name) = base_name else {
+                    continue;
+                };
+
+                if variants.len() >= MIN_FAMILY_SIZE {
+                    families.push(MethodFamily {
+                        prefix: prefix.to_string(),
+                        receiver: receiver.clone(),
+                        base_method: base_name,
+                        variants,
+                    });
+                }
+            }
+        }
+    }
+    
+    families
+}
+
+fn emit_method_with_family_check(
+    output: &mut String,
+    node: Node,
+    source: &[u8],
+    families: &[MethodFamily],
+) {
+    let Some(info) = extract_method_info(node, source) else {
+        extract_go_function_skeleton(output, node, source, "");
+        return;
+    };
+    
+    // Check if this method is part of a family
+    for family in families {
+        if info.receiver == family.receiver {
+            // If this is the base method, emit it with family summary
+            if info.name == family.base_method {
+                output.push_str(&info.signature);
+                output.push('\n');
+                if !info.call_edges.is_empty() {
+                    output.push_str(&info.call_edges);
+                    output.push('\n');
+                }
+                // Emit family summary
+                output.push_str(&format!(
+                    "// {} variants: {} ({} methods)\n",
+                    family.prefix,
+                    summarize_variants(&family.variants),
+                    family.variants.len()
+                ));
+                return;
+            }
+            // If this is a variant, skip it (already summarized)
+            if family.variants.contains(&info.name) {
+                return;
+            }
+        }
+    }
+    
+    // Not part of a family, emit normally
+    output.push_str(&info.signature);
+    output.push('\n');
+    if !info.call_edges.is_empty() {
+        output.push_str(&info.call_edges);
+        output.push('\n');
+    }
+}
+
+fn summarize_variants(variants: &[String]) -> String {
+    if variants.len() <= 6 {
+        variants.join(", ")
+    } else {
+        let first_five: Vec<&str> = variants.iter().take(5).map(|s| s.as_str()).collect();
+        format!("{}, ... +{} more", first_five.join(", "), variants.len() - 5)
+    }
+}
+
+fn extract_go_node(output: &mut String, node: Node, source: &[u8], depth: usize) {
     let indent = "\t".repeat(depth);
 
     match node.kind() {
-        // Package declaration
         "package_clause" => {
             output.push_str(get_node_text(node, source));
             output.push('\n');
         }
 
-        // Imports
         "import_declaration" => {
             output.push_str(&truncate_line(get_node_text(node, source), MAX_DEF_LINE_LEN));
             output.push('\n');
         }
 
-        // Type declarations
         "type_declaration" => {
             output.push_str(&truncate_line(get_node_text(node, source), MAX_DEF_LINE_LEN));
             output.push('\n');
         }
 
-        // Function declarations
         "function_declaration" => {
             extract_go_function_skeleton(output, node, source, &indent);
         }
 
-        // Method declarations
         "method_declaration" => {
             extract_go_function_skeleton(output, node, source, &indent);
         }
 
-        // Const/var declarations
         "const_declaration" | "var_declaration" => {
             output.push_str(&truncate_line(get_node_text(node, source), MAX_DEF_LINE_LEN));
             output.push('\n');
         }
 
-        // Type specs (interfaces, structs defined within type_declaration)
         "type_spec" => {
             output.push_str(&truncate_line(get_node_text(node, source), MAX_DEF_LINE_LEN));
             output.push('\n');
         }
 
-        // Comments - keep doc comments
         "comment" => {
             let text = get_node_text(node, source);
             if text.starts_with("//") && text.len() > 3 {
@@ -76,11 +325,10 @@ fn extract_go_skeleton(output: &mut String, node: Node, source: &[u8], depth: us
             }
         }
 
-        // Source file - recurse into children
         "source_file" => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                extract_go_skeleton(output, child, source, depth);
+                extract_go_node(output, child, source, depth);
             }
         }
 
@@ -281,5 +529,87 @@ func process() {
         assert!(skeleton.contains("readFile"));
         assert!(skeleton.contains("transform"));
         assert!(skeleton.contains("writeFile"));
+    }
+
+    #[test]
+    fn test_go_method_family_summarization() {
+        let code = r#"package main
+
+type Context struct {
+    data map[string]any
+}
+
+func (c *Context) Get(key string) any {
+    return c.data[key]
+}
+
+func (c *Context) GetString(key string) string {
+    return c.data[key].(string)
+}
+
+func (c *Context) GetInt(key string) int {
+    return c.data[key].(int)
+}
+
+func (c *Context) GetBool(key string) bool {
+    return c.data[key].(bool)
+}
+
+func (c *Context) GetFloat(key string) float64 {
+    return c.data[key].(float64)
+}
+
+func (c *Context) Other() string {
+    return "other"
+}
+"#;
+        let skeleton = parse_go(code);
+        println!("Skeleton:\n{}", skeleton);
+        // Base Get method should be present
+        assert!(skeleton.contains("func (c *Context) Get(key string) any"));
+        // Family summary should be present
+        assert!(skeleton.contains("Get variants:"));
+        assert!(skeleton.contains("GetString"));
+        // Individual variant methods should NOT be present as full signatures
+        assert!(!skeleton.contains("func (c *Context) GetString"));
+        assert!(!skeleton.contains("func (c *Context) GetInt"));
+        // Non-family method should still be present
+        assert!(skeleton.contains("func (c *Context) Other()"));
+    }
+
+    #[test]
+    fn test_go_method_family_without_base() {
+        let code = r#"package main
+
+type Context struct {
+    data map[string]any
+}
+
+func (c *Context) GetString(key string) string {
+    return c.data[key].(string)
+}
+
+func (c *Context) GetInt(key string) int {
+    return c.data[key].(int)
+}
+
+func (c *Context) GetBool(key string) bool {
+    return c.data[key].(bool)
+}
+
+func (c *Context) GetFloat(key string) float64 {
+    return c.data[key].(float64)
+}
+"#;
+        let skeleton = parse_go(code);
+        println!("Skeleton:\n{}", skeleton);
+        // One variant should be promoted to base and emitted
+        assert!(skeleton.contains("func (c *Context) GetString(key string) string"));
+        // Family summary should be present
+        assert!(skeleton.contains("Get variants:"));
+        assert!(skeleton.contains("GetInt"));
+        // Other variants should not appear as full signatures
+        assert!(!skeleton.contains("func (c *Context) GetInt"));
+        assert!(!skeleton.contains("func (c *Context) GetBool"));
     }
 }

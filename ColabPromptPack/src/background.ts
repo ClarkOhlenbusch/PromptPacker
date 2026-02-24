@@ -36,6 +36,21 @@ async function sendMessageWithRetry(tabId: number, message: any, maxRetries = 3)
     }
 }
 
+// Proactively inject the content script whenever a Colab tab finishes loading.
+// This ensures hotkeys work immediately without needing to open the extension first.
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (
+        changeInfo.status === "complete" &&
+        tab.url?.startsWith("https://colab.research.google.com/")
+    ) {
+        try {
+            await ensureContentScript(tabId);
+        } catch (err) {
+            // Silently ignore – tab may have navigated away
+        }
+    }
+});
+
 chrome.action.onClicked.addListener(async (tab) => {
     if (!tab.id || !tab.url?.startsWith("https://colab.research.google.com/")) {
         return;

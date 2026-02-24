@@ -102,7 +102,9 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
         if (changes.quickCopyIncludesMarkdown) quickCopyIncludesMarkdown = changes.quickCopyIncludesMarkdown.newValue;
     });
 
-    window.addEventListener("keydown", (e: KeyboardEvent) => {
+    // Use capture phase on document so our handler fires before Colab's own
+    // keyboard handlers can stopPropagation and swallow the event.
+    document.addEventListener("keydown", (e: KeyboardEvent) => {
         const target = e.target as HTMLElement;
         const tag = target.tagName.toLowerCase();
         // Allow shortcuts through for Monaco editor textareas (code cells)
@@ -150,7 +152,7 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
             // Forward ESC to iframe if it's open
             overlayIframe.contentWindow?.postMessage({ type: "EXTERNAL_ESCAPE" }, "*");
         }
-    });
+    }, true); // capture phase
 
     window.addEventListener("message", (event) => {
         if (event.data.type === "PROMPTPACK_INJECTED_READY") {

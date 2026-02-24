@@ -2,8 +2,6 @@ use serde::{Serialize, Deserialize};
 use ignore::WalkBuilder;
 use std::collections::{HashSet, HashMap};
 use std::path::Path;
-use std::fs::File;
-use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -109,18 +107,12 @@ const IGNORED_FILE_SUFFIXES: &[&str] = &[
     ".log", ".map", ".cache", ".min.js", ".min.css", ".bak", ".lock", ".icns",
 ];
 
-const MAX_LINE_COUNT_BYTES: u64 = 512 * 1024;
-
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
 struct SnapshotState {
     snapshot: Mutex<HashMap<String, String>>,
-}
-
-struct ScanResultState {
-    directories: Mutex<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -183,24 +175,6 @@ struct FileEntry {
     line_count: Option<usize>,
 }
 
-fn count_lines(path: &Path) -> Option<usize> {
-    let file = File::open(path).ok()?;
-    let mut reader = io::BufReader::new(file);
-    let mut buffer = [0; 32 * 1024];
-    let mut count = 0;
-
-    loop {
-        match reader.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => {
-                count += buffer[..n].iter().filter(|&&b| b == b'\n').count();
-            }
-            Err(_) => return None,
-        }
-    }
-    Some(count + 1)
-}
-
 fn is_ignored_dir(name_lower: &str, path: &Path) -> bool {
     if IGNORED_DIR_NAMES.iter().any(|dir| dir == &name_lower) {
         return true;
@@ -258,7 +232,7 @@ fn scan_project_entries(path: &Path) -> Result<Vec<FileEntry>, String> {
     }
 
     let root = path.to_path_buf();
-    let entries = Arc::new(Mutex::new(Vec::new()));
+    let (tx, rx) = std::sync::mpsc::channel::<FileEntry>();
 
     let walker = WalkBuilder::new(&root)
         .standard_filters(true)
@@ -279,55 +253,41 @@ fn scan_project_entries(path: &Path) -> Result<Vec<FileEntry>, String> {
         })
         .build_parallel();
 
-    {
-        let entries_clone = Arc::clone(&entries);
+    walker.run(|| {
+        let tx = tx.clone();
         let root = root.clone();
 
-        walker.run(|| {
-            let entries = Arc::clone(&entries_clone);
-            let root = root.clone();
-
-            Box::new(move |result| {
-                match result {
-                    Ok(entry) => {
-                        let p = entry.path();
-                        if p == root.as_path() {
-                            return ignore::WalkState::Continue;
-                        }
-
-                        if let Ok(relative) = p.strip_prefix(&root) {
-                            let is_dir = p.is_dir();
-                            let size = p.metadata().map(|m| m.len()).unwrap_or(0);
-                            let mut line_count = None;
-
-                            // Line counting is expensive; keep scan responsive by limiting to small files.
-                            if !is_dir && size <= MAX_LINE_COUNT_BYTES {
-                                line_count = count_lines(p);
-                            }
-
-                            if let Ok(mut entries) = entries.lock() {
-                                entries.push(FileEntry {
-                                    path: p.to_string_lossy().to_string(),
-                                    relative_path: normalize_relative_path(relative),
-                                    is_dir,
-                                    size,
-                                    line_count,
-                                });
-                            }
-                        }
+        Box::new(move |result| {
+            match result {
+                Ok(entry) => {
+                    let p = entry.path();
+                    if p == root.as_path() {
+                        return ignore::WalkState::Continue;
                     }
-                    Err(err) => eprintln!("Error walking path: {}", err),
+
+                    if let Ok(relative) = p.strip_prefix(&root) {
+                        let is_dir = p.is_dir();
+                        let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+
+                        let _ = tx.send(FileEntry {
+                            path: p.to_string_lossy().to_string(),
+                            relative_path: normalize_relative_path(relative),
+                            is_dir,
+                            size,
+                            line_count: None,
+                        });
+                    }
                 }
+                Err(err) => eprintln!("Error walking path: {}", err),
+            }
 
-                ignore::WalkState::Continue
-            })
-        });
-    }
+            ignore::WalkState::Continue
+        })
+    });
 
-    let mut entries = Arc::try_unwrap(entries)
-        .map_err(|_| "Failed to collect scan entries".to_string())?
-        .into_inner()
-        .map_err(|_| "Failed to collect scan entries".to_string())?;
+    // Drop the original sender so the channel closes once all walker threads finish.
+    drop(tx);
+    let mut entries: Vec<FileEntry> = rx.into_iter().collect();
 	
     let mut keep_dirs: HashSet<String> = HashSet::new();
     for entry in entries.iter().filter(|e| !e.is_dir) {
@@ -353,24 +313,13 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-async fn scan_project(path: String, state: State<'_, ScanResultState>, perf: State<'_, PerfMetricsState>) -> Result<Vec<FileEntry>, String> {
+async fn scan_project(path: String, perf: State<'_, PerfMetricsState>) -> Result<Vec<FileEntry>, String> {
     let start = Instant::now();
     let root_path = Path::new(&path);
     let entries = scan_project_entries(root_path)?;
 
     let file_count = entries.iter().filter(|e| !e.is_dir).count();
     let dir_count = entries.iter().filter(|e| e.is_dir).count();
-
-    let mut dirs: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.is_dir)
-        .map(|entry| entry.path.clone())
-        .collect();
-    dirs.push(path.clone());
-
-    if let Ok(mut stored) = state.directories.lock() {
-        *stored = dirs;
-    }
 
     if let Ok(mut m) = perf.metrics.lock() {
         m.scan = Some(ScanMetrics {
@@ -390,13 +339,12 @@ async fn watch_project(
     app: tauri::AppHandle,
     path: String,
     state: State<'_, WatcherState>,
-    scan_state: State<'_, ScanResultState>,
     perf: State<'_, PerfMetricsState>,
 ) -> Result<(), String> {
     let start = Instant::now();
     let mut watcher_guard = state.watcher.lock().map_err(|_| "Failed to lock watcher state")?;
 
-    // Stop existing watcher by dropping it (taking it out of the Option)
+    // Drop the old watcher before creating a new one.
     let _ = watcher_guard.take();
 
     let debounce = Duration::from_millis(500);
@@ -418,57 +366,23 @@ async fn watch_project(
                    return;
                }
                *last_emit = Instant::now();
-               // Emit simple event to trigger refresh
                let _ = app_handle.emit("project-change", ());
            }
            Err(e) => eprintln!("watch error: {:?}", e),
         }
     }).map_err(|e| e.to_string())?;
 
-    let dirs = scan_state
-        .directories
-        .lock()
-        .map(|stored| stored.clone())
-        .unwrap_or_default();
-
-    let used_cached_dirs;
-    let mut dirs_watched = 0;
-
-    if !dirs.is_empty() {
-        used_cached_dirs = true;
-        for dir_path in &dirs {
-            let _ = watcher.watch(Path::new(dir_path), RecursiveMode::NonRecursive);
-            dirs_watched += 1;
-        }
-    } else {
-        used_cached_dirs = false;
-        // Fallback: walk the tree if no cached scan result is available.
-        let walker = WalkBuilder::new(&path)
-            .standard_filters(true)
-            .filter_entry(|entry| {
-                let name = entry.file_name().to_string_lossy();
-                let name_lower = name.to_lowercase();
-                !is_ignored_dir(&name_lower, entry.path())
-            })
-            .build();
-
-        for result in walker {
-            if let Ok(entry) = result {
-                if entry.path().is_dir() {
-                    let _ = watcher.watch(entry.path(), RecursiveMode::NonRecursive);
-                    dirs_watched += 1;
-                }
-            }
-        }
-    }
+    // One recursive watcher on the root instead of one handle per directory.
+    watcher.watch(Path::new(&path), RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
 
     *watcher_guard = Some(watcher);
 
     if let Ok(mut m) = perf.metrics.lock() {
         m.watch = Some(WatchMetrics {
             duration_ms: start.elapsed().as_secs_f64() * 1000.0,
-            dirs_watched,
-            used_cached_dirs,
+            dirs_watched: 1,
+            used_cached_dirs: false,
         });
     }
 
@@ -852,7 +766,6 @@ pub fn run() {
 
             app.manage(WatcherState { watcher: Mutex::new(None) });
             app.manage(SnapshotState { snapshot: Mutex::new(HashMap::new()) });
-            app.manage(ScanResultState { directories: Mutex::new(Vec::new()) });
             app.manage(PerfMetricsState { metrics: Mutex::new(PerfMetrics::default()) });
 
             Ok(())

@@ -430,6 +430,8 @@ pub fn collect_summary_phrases(text: &str) -> Vec<&'static str> {
         (&[".logits", "softmax(", ".argmax("], "computes logits"),
         (&["!pip", "pip install", "requirements.txt"], "installs dependencies"),
         (&["!git clone", "!wget", "!curl", "gdown"], "downloads resources"),
+        (&["pad_sequence", ".pad(", "max_length=", "attention_mask"], "prepares inputs/masks"),
+        (&["gsutil", "kaggle"], "downloads external data"),
     ];
 
     for (keywords, phrase) in patterns {
@@ -440,7 +442,46 @@ pub fn collect_summary_phrases(text: &str) -> Vec<&'static str> {
         }
     }
 
+    // Extract print intent
+    if let Some(intent) = extract_print_intent(text) {
+        if !phrases.contains(&intent) {
+            phrases.push(intent);
+        }
+    }
+
     phrases
+}
+
+/// Extract semantic intent from print statements
+pub fn extract_print_intent(text: &str) -> Option<&'static str> {
+    let lower = text.to_lowercase();
+    
+    // Look for print statements
+    if !lower.contains("print(") {
+        return None;
+    }
+
+    // Extract message content from print statements
+    if lower.contains("build") || lower.contains("creat") || lower.contains("generat") {
+        return Some("building/generating");
+    }
+    if lower.contains("load") || lower.contains("read") {
+        return Some("loading");
+    }
+    if lower.contains("sav") || lower.contains("writ") {
+        return Some("saving");
+    }
+    if lower.contains("train") || lower.contains("epoch") {
+        return Some("training progress");
+    }
+    if lower.contains("process") {
+        return Some("processing");
+    }
+    if lower.contains("done") || lower.contains("finish") || lower.contains("complete") {
+        return Some("completion");
+    }
+
+    None
 }
 
 #[cfg(test)]

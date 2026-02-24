@@ -3,7 +3,7 @@
 //! Handles: imports, exports, functions, classes, interfaces, types, JSX components,
 //! React hooks, effects, and various JS/TS patterns.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::Node;
 
 use crate::skeleton::common::{
@@ -23,6 +23,8 @@ const MAX_JS_HOOK_INIT_LEN: usize = 28;
 const MAX_JS_INSIGHT_NAME_LEN: usize = 40;
 const ENABLE_JS_TS_INSIGHTS: bool = true;
 const MAX_JSX_RETURN_NODES: usize = 2000;
+const MAX_IMPORT_SUMMARY_MODULES: usize = 20;
+const MAX_IMPORT_SUMMARY_NAMES: usize = 12;
 
 // ============ Context Types ============
 
@@ -34,6 +36,8 @@ pub struct JsTsContext<'a> {
     pub external_imports: Option<&'a HashSet<String>>,
     pub external_bindings: Option<&'a HashSet<String>>,
     pub entrypoint_mode: bool,
+    pub import_summary_only: bool,
+    pub unwrap_top_level_iife: bool,
 }
 
 pub struct JsTsExports {
@@ -91,10 +95,11 @@ pub fn extract_skeleton(
     file_path: Option<&str>,
     is_tsx: bool,
 ) -> String {
-    let _ = content; // Reserved for future use
     let exports = collect_js_ts_exports(root, source);
     let external_imports = collect_js_ts_external_imports(root, source);
     let entrypoint_mode = js_ts_is_entrypoint(root, source, file_path, is_tsx);
+    let import_summary_only = js_ts_import_summary_only();
+    let unwrap_top_level_iife = js_ts_should_unwrap_iife(content);
 
     let ctx = JsTsContext {
         has_exports: exports.has_exports,
@@ -115,21 +120,211 @@ pub fn extract_skeleton(
             Some(&external_imports.bindings)
         },
         entrypoint_mode,
+        import_summary_only,
+        unwrap_top_level_iife,
     };
 
     let mut output = String::new();
 
-    // Output external module imports
-    if !external_imports.modules.is_empty() {
-        let mut sorted: Vec<_> = external_imports.modules.iter().collect();
-        sorted.sort();
-        for ext in sorted {
-            output.push_str(&format!("// External: {}\n", ext));
+    if import_summary_only {
+        emit_import_summary(&mut output, root, source);
+    } else {
+        // Output external module imports
+        if !external_imports.modules.is_empty() {
+            let mut sorted: Vec<_> = external_imports.modules.iter().collect();
+            sorted.sort();
+            for ext in sorted {
+                output.push_str(&format!("// External: {}\n", ext));
+            }
         }
     }
 
     extract_js_ts_skeleton(&mut output, root, source, 0, ctx);
     output.trim().to_string()
+}
+
+fn js_ts_import_summary_only() -> bool {
+    let Ok(value) = std::env::var("PROMPTPACK_IMPORT_SUMMARY_ONLY") else {
+        return false;
+    };
+    let value = value.trim().to_ascii_lowercase();
+    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+}
+
+fn js_ts_should_unwrap_iife(content: &str) -> bool {
+    let mut lines = 0usize;
+    let mut total_len = 0usize;
+    let mut max_len = 0usize;
+    for line in content.lines() {
+        let len = line.chars().count();
+        if len == 0 {
+            continue;
+        }
+        lines += 1;
+        total_len += len;
+        if len > max_len {
+            max_len = len;
+        }
+    }
+    if lines == 0 {
+        return false;
+    }
+    let avg_len = total_len as f64 / lines as f64;
+    lines >= 30 && avg_len <= 120.0 && max_len <= 400
+}
+
+struct ImportSummary {
+    module: String,
+    bindings: Vec<String>,
+    type_only: bool,
+    side_effect: bool,
+}
+
+fn emit_import_summary(output: &mut String, root: Node, source: &[u8]) {
+    let summaries = collect_import_summaries(root, source);
+    if summaries.is_empty() {
+        return;
+    }
+
+    output.push_str("// Imports (summary)\n");
+    for (idx, summary) in summaries.iter().enumerate() {
+        if idx >= MAX_IMPORT_SUMMARY_MODULES {
+            break;
+        }
+        let mut line = String::new();
+        line.push_str("// Import");
+        if summary.type_only {
+            line.push_str(" (type)");
+        }
+        line.push_str(": ");
+        line.push_str(&summary.module);
+        if summary.side_effect || summary.bindings.is_empty() {
+            line.push_str(" (side-effect)");
+        } else {
+            line.push_str(" -> ");
+            line.push_str(&format_import_bindings(&summary.bindings));
+        }
+        output.push_str(&truncate_line(&line, MAX_DEF_LINE_LEN));
+        output.push('\n');
+    }
+
+    if summaries.len() > MAX_IMPORT_SUMMARY_MODULES {
+        output.push_str(&format!(
+            "// ... +{} more imports\n",
+            summaries.len() - MAX_IMPORT_SUMMARY_MODULES
+        ));
+    }
+}
+
+fn collect_import_summaries(root: Node, source: &[u8]) -> Vec<ImportSummary> {
+    let mut summaries: Vec<ImportSummary> = Vec::new();
+    let mut indices: HashMap<String, usize> = HashMap::new();
+    let mut cursor = root.walk();
+
+    for child in root.children(&mut cursor) {
+        if !matches!(child.kind(), "import_statement" | "import_declaration") {
+            continue;
+        }
+        let Some(source_node) = child.child_by_field_name("source") else {
+            continue;
+        };
+        let Some(specifier) = js_string_literal(source_node, source) else {
+            continue;
+        };
+        let mut bindings = Vec::new();
+        collect_import_bindings(child, source, &mut bindings);
+        let type_only = js_import_is_type_only(child, source);
+        let side_effect = bindings.is_empty();
+
+        let entry = ImportSummary {
+            module: specifier.clone(),
+            bindings,
+            type_only,
+            side_effect,
+        };
+
+        if let Some(idx) = indices.get(&specifier).copied() {
+            merge_import_summary(&mut summaries[idx], entry);
+        } else {
+            indices.insert(specifier.clone(), summaries.len());
+            summaries.push(entry);
+        }
+    }
+
+    summaries
+}
+
+fn js_import_is_type_only(node: Node, source: &[u8]) -> bool {
+    let text = get_node_text(node, source);
+    text.trim_start().starts_with("import type")
+}
+
+fn collect_import_bindings(node: Node, source: &[u8], bindings: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "import_specifier" => {
+                if let Some(name) = child
+                    .child_by_field_name("local")
+                    .or_else(|| child.child_by_field_name("name"))
+                {
+                    add_unique_binding(bindings, get_node_text(name, source).to_string());
+                }
+            }
+            "namespace_import" => {
+                if let Some(name) = child
+                    .child_by_field_name("name")
+                    .or_else(|| child.child_by_field_name("local"))
+                {
+                    add_unique_binding(
+                        bindings,
+                        format!("* as {}", get_node_text(name, source)),
+                    );
+                }
+            }
+            "import_clause" | "named_imports" => {
+                collect_import_bindings(child, source, bindings);
+            }
+            "identifier" => {
+                add_unique_binding(bindings, get_node_text(child, source).to_string());
+            }
+            _ => {}
+        }
+    }
+}
+
+fn add_unique_binding(bindings: &mut Vec<String>, name: String) {
+    if !bindings.contains(&name) {
+        bindings.push(name);
+    }
+}
+
+fn merge_import_summary(existing: &mut ImportSummary, incoming: ImportSummary) {
+    for binding in incoming.bindings {
+        add_unique_binding(&mut existing.bindings, binding);
+    }
+    existing.type_only = existing.type_only && incoming.type_only;
+    existing.side_effect = existing.side_effect && incoming.side_effect;
+}
+
+fn format_import_bindings(bindings: &[String]) -> String {
+    let mut out = String::new();
+    for (idx, binding) in bindings.iter().enumerate() {
+        if idx >= MAX_IMPORT_SUMMARY_NAMES {
+            break;
+        }
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(binding);
+    }
+    if bindings.len() > MAX_IMPORT_SUMMARY_NAMES {
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str("...");
+    }
+    out
 }
 
 // ============ Core Extraction ============
@@ -151,6 +346,9 @@ fn extract_js_ts_skeleton<'a>(
     match node.kind() {
         // Keep imports verbatim
         "import_statement" | "import_declaration" => {
+            if ctx.import_summary_only {
+                return;
+            }
             output.push_str(&truncate_line(get_node_text(node, source), MAX_DEF_LINE_LEN));
             output.push('\n');
         }
@@ -337,6 +535,13 @@ fn extract_js_ts_skeleton<'a>(
                 output.push_str(&truncate_line(text, MAX_DEF_LINE_LEN));
                 output.push('\n');
             } else if depth == 0 && !skip_non_export {
+                if ctx.unwrap_top_level_iife {
+                    if let Some(iife_fn) = find_iife_function_in_statement(node, source) {
+                        if emit_iife_body(output, iife_fn, source, depth, ctx) {
+                            return;
+                        }
+                    }
+                }
                 if let Some(summary) = summarize_top_level_call(node, source) {
                     output.push_str(&indent);
                     output.push_str(&summary);
@@ -2523,6 +2728,61 @@ fn summarize_top_level_call(node: Node, source: &[u8]) -> Option<String> {
     Some(truncate_line(&summary, MAX_DEF_LINE_LEN))
 }
 
+fn find_iife_function_in_statement<'a>(node: Node<'a>, _source: &'a [u8]) -> Option<Node<'a>> {
+    let mut budget = 200;
+    let call_expr = find_call_expression(node, &mut budget)?;
+    let callee = call_expr.child_by_field_name("function")?;
+    find_iife_function(callee)
+}
+
+fn find_iife_function<'a>(node: Node<'a>) -> Option<Node<'a>> {
+    match node.kind() {
+        "function" | "function_expression" | "arrow_function" => return Some(node),
+        "parenthesized_expression" | "unary_expression" | "await_expression" => {}
+        _ => return None,
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(found) = find_iife_function(child) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn emit_iife_body(
+    output: &mut String,
+    func_node: Node,
+    source: &[u8],
+    depth: usize,
+    ctx: JsTsContext,
+) -> bool {
+    let body = func_node
+        .child_by_field_name("body")
+        .or_else(|| func_node.child_by_field_name("block"))
+        .or_else(|| func_node.child_by_field_name("statement_block"));
+    let Some(body) = body else {
+        return false;
+    };
+    if body.kind() != "statement_block" {
+        return false;
+    }
+
+    let indent = "  ".repeat(depth);
+    output.push_str(&indent);
+    output.push_str(&format!("{} {{\n", iife_label(func_node)));
+
+    let mut cursor = body.walk();
+    for child in body.named_children(&mut cursor) {
+        extract_js_ts_skeleton(output, child, source, depth + 1, ctx);
+    }
+
+    output.push_str(&indent);
+    output.push_str("}\n");
+    true
+}
+
 fn find_call_expression<'a>(node: Node<'a>, budget: &mut usize) -> Option<Node<'a>> {
     if *budget == 0 {
         return None;
@@ -2665,5 +2925,21 @@ export function Counter(): JSX.Element {
         let skeleton = parse_tsx(code);
         assert!(skeleton.contains("export function Counter"));
         assert!(skeleton.contains("useState"));
+    }
+
+    #[test]
+    fn test_unwrap_iife_for_readable_files() {
+        let mut code = String::from("(() => {\n");
+        code.push_str("  const a = 1;\n");
+        code.push_str("  function foo() {}\n");
+        for i in 0..35 {
+            code.push_str(&format!("  const v{} = {};\n", i, i));
+        }
+        code.push_str("})();\n");
+
+        let skeleton = parse_ts(&code);
+        assert!(skeleton.contains("IIFE {"));
+        assert!(skeleton.contains("function foo"));
+        assert!(skeleton.contains("const a"));
     }
 }

@@ -3,9 +3,19 @@
 //! These tests verify AST-based code skeletonization for various languages.
 
 use crate::skeleton::{skeletonize_with_path, SkeletonResult};
+use std::fs;
+use std::path::Path;
 
 fn skeletonize(content: &str, extension: &str) -> SkeletonResult {
     skeletonize_with_path(content, extension, None)
+}
+
+fn skeletonize_with_fixture_path(path: &Path) -> SkeletonResult {
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|err| panic!("Failed to read fixture {}: {}", path.display(), err));
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let path_str = path.to_string_lossy();
+    skeletonize_with_path(&content, ext, Some(path_str.as_ref()))
 }
 
 #[test]
@@ -173,6 +183,7 @@ func main() {
 fn test_unsupported_language() {
     let code = "void main() { printf(\"hello\"); }";
     let result = skeletonize(code, "unknown");
+    println!("Skeleton (unknown):\n{}", result.skeleton);
     assert!(result.language.is_none());
 }
 
@@ -187,6 +198,7 @@ export = Foo;
 "#;
 
     let result = skeletonize(code, "ts");
+    println!("Skeleton:\n{}", result.skeleton);
     assert!(result.skeleton.contains("class Foo"));
     assert!(result.skeleton.contains("export = Foo"));
 }
@@ -199,6 +211,7 @@ export { foo, baz };
 "#;
 
     let result = skeletonize(code, "ts");
+    println!("Skeleton:\n{}", result.skeleton);
     assert!(result.skeleton.contains("const { foo"));
 }
 
@@ -210,6 +223,7 @@ export { foo as bar };
 "#;
 
     let result = skeletonize(code, "ts");
+    println!("Skeleton:\n{}", result.skeleton);
     assert!(result.skeleton.contains("const foo"));
     assert!(result.skeleton.contains("export { foo as bar"));
 }
@@ -957,4 +971,655 @@ def validate_input(text):
     // Should NOT detect regex patterns as paths
     assert!(!result.skeleton.contains("# Reads:") || !result.skeleton.contains(r"\s*"));
     assert!(!result.skeleton.contains("# Writes:"));
+}
+
+#[test]
+fn test_c_skeleton() {
+    let code = r#"
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX_SIZE 100
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    
+    // Basic test - should at least keep includes and defines
+    assert!(result.skeleton.contains("#include <stdio.h>"));
+    assert!(result.skeleton.contains("#define MAX_SIZE"));
+    
+    // TODO: Add more comprehensive tests once function extraction is working
+    // Currently the C parser needs refinement to properly extract:
+    // - Function definitions
+    // - Struct/union/enum definitions  
+    // - Typedefs
+    // - Function calls
+}
+
+#[test]
+fn test_c_preprocessor_guards_and_macros() {
+    let code = r#"
+#ifndef LIB_UTILS_H
+#define LIB_UTILS_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
+
+#ifdef ENABLE_LOGGING
+#define LOG(msg) printf("%s\n", msg)
+#else
+#define LOG(msg) ((void)0)
+#endif
+
+#endif
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("#ifndef LIB_UTILS_H"));
+    assert!(result.skeleton.contains("#define MAX(a, b)"));
+    assert!(result.skeleton.contains("#ifdef ENABLE_LOGGING"));
+    assert!(result.skeleton.contains("#endif"));
+}
+
+#[test]
+fn test_c_struct_enum_union_summary() {
+    let code = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+union Payload {
+    int i;
+    float f;
+};
+
+enum Status {
+    STATUS_OK,
+    STATUS_ERR,
+    STATUS_UNKNOWN
+};
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("struct Point"));
+    assert!(result.skeleton.contains("enum Status"));
+}
+
+#[test]
+fn test_c_typedefs_and_prototypes() {
+    let code = r#"
+typedef int (*Comparator)(const void *a, const void *b);
+typedef struct Pair { int left; int right; } Pair;
+
+void sort(void *base, size_t count, Comparator cmp);
+int (*resolve)(int code);
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("typedef int (*Comparator)"));
+    assert!(result.skeleton.contains("typedef struct Pair"));
+}
+
+#[test]
+fn test_c_function_calls_and_comments() {
+    let code = r#"
+/** Initialize buffer with zeros. */
+char *init_buffer(size_t size) {
+    char *buf = (char *)malloc(size);
+    if (!buf) {
+        return NULL;
+    }
+    memset(buf, 0, size);
+    return buf;
+}
+
+// TODO: free buffer after use
+void release_buffer(char *buf) {
+    free(buf);
+}
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("Initialize buffer"));
+}
+
+#[test]
+fn test_js_multi_style_suite() {
+    let code = r#"
+const express = require("express");
+const fs = require("fs");
+import path from "path";
+
+const app = express();
+
+class UserRepo {
+    constructor(db) {
+        this.db = db;
+    }
+
+    findById(id) {
+        return this.db.get(id);
+    }
+}
+
+function createServer(port = 3000) {
+    app.get("/health", (_req, res) => res.json({ ok: true }));
+    return app.listen(port);
+}
+
+const handler = async (req, res) => {
+    const data = await fs.promises.readFile(path.join(__dirname, "data.json"), "utf8");
+    res.send(data);
+};
+
+module.exports = { createServer, UserRepo, handler };
+"#;
+
+    let result = skeletonize(code, "js");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("class UserRepo"));
+    assert!(result.skeleton.contains("function createServer"));
+    assert!(result.skeleton.contains("const handler"));
+    assert!(result.skeleton.contains("module.exports"));
+}
+
+#[test]
+fn test_jsx_component_suite() {
+    let code = r#"
+import React, { useState } from "react";
+import { createRoot } from "react-dom/client";
+
+export function Button({ label, onClick }) {
+    return <button onClick={onClick}>{label}</button>;
+}
+
+export default function App() {
+    const [count, setCount] = useState(0);
+    return (
+        <main>
+            <h1>Hello</h1>
+            <Button label={`Count ${count}`} onClick={() => setCount(count + 1)} />
+        </main>
+    );
+}
+
+const root = createRoot(document.getElementById("root"));
+root.render(<App />);
+"#;
+
+    let result = skeletonize(code, "jsx");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("export function Button"));
+    assert!(result.skeleton.contains("export default function App"));
+    assert!(result.skeleton.contains("// External: react"));
+}
+
+#[test]
+fn test_typescript_multi_style_suite() {
+    let code = r#"
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+export interface User {
+    id: string;
+    roles: string[];
+}
+
+export type Result<T> =
+    | { ok: true; value: T }
+    | { ok: false; error: string };
+
+export enum Role {
+    Admin = "admin",
+    Viewer = "viewer",
+}
+
+export class Service<T> {
+    constructor(private store: Map<string, T>) {}
+    get(id: string): Result<T> {
+        return { ok: true, value: this.store.get(id)! };
+    }
+}
+
+export function handle(req: Request, res: Response): void;
+export function handle(req: Request, res: Response, next: () => void): void;
+export function handle(req: Request, res: Response, _next?: () => void) {
+    res.json({ ok: true });
+}
+
+export const createSchema = (name: string) =>
+    z.object({ name: z.string().min(1).default(name) });
+
+export namespace Internal {
+    export const version = "1.0";
+}
+"#;
+
+    let result = skeletonize(code, "ts");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("interface User"));
+    assert!(result.skeleton.contains("type Result"));
+    assert!(result.skeleton.contains("enum Role"));
+    assert!(result.skeleton.contains("class Service"));
+    assert!(result.skeleton.contains("function handle"));
+}
+
+#[test]
+fn test_tsx_component_suite() {
+    let code = r#"
+import React, { useMemo, useReducer, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+type Props = { id: string };
+
+const ThemeContext = React.createContext("light");
+
+export const Card: React.FC<Props> = ({ id }) => {
+    const theme = useContext(ThemeContext);
+    const [{ count }, dispatch] = useReducer((s, a) => ({ count: s.count + 1 }), { count: 0 });
+    const { data } = useQuery({
+        queryKey: ["item", id],
+        queryFn: () => fetch(`/api/items/${id}`).then((r) => r.json()),
+    });
+    const label = useMemo(() => data?.name ?? "Loading", [data]);
+    return (
+        <section data-theme={theme}>
+            <h2>{label}</h2>
+            <button onClick={() => dispatch({})}>Inc</button>
+        </section>
+    );
+};
+
+export default function App() {
+    return <Card id="1" />;
+}
+"#;
+
+    let result = skeletonize(code, "tsx");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("const Card"));
+    assert!(result.skeleton.contains("function App"));
+    assert!(result.skeleton.contains("// External: react"));
+    assert!(result.skeleton.contains("@tanstack/react-query"));
+}
+
+#[test]
+fn test_rust_multi_style_suite() {
+    let code = r#"
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct User {
+    pub id: String,
+    pub roles: Vec<Role>,
+}
+
+pub enum Role {
+    Admin,
+    Viewer,
+}
+
+pub trait Repo<T> {
+    fn get(&self, id: &str) -> Option<T>;
+}
+
+pub struct InMemoryRepo<T> {
+    data: HashMap<String, T>,
+}
+
+impl<T: Clone> Repo<T> for InMemoryRepo<T> {
+    fn get(&self, id: &str) -> Option<T> {
+        self.data.get(id).cloned()
+    }
+}
+
+pub type Result<T> = std::result::Result<T, String>;
+
+pub async fn load_user(id: &str) -> Result<User> {
+    Ok(User { id: id.to_string(), roles: vec![Role::Viewer] })
+}
+
+macro_rules! metric {
+    ($name:expr) => {
+        println!("{}", $name);
+    };
+}
+"#;
+
+    let result = skeletonize(code, "rs");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("use serde"));
+    assert!(result.skeleton.contains("pub struct User"));
+    assert!(result.skeleton.contains("pub enum Role"));
+    assert!(result.skeleton.contains("pub trait Repo"));
+    assert!(result.skeleton.contains("impl<T: Clone> Repo<T> for InMemoryRepo<T>"));
+    assert!(result.skeleton.contains("pub async fn load_user"));
+    assert!(result.skeleton.contains("macro_rules! metric"));
+}
+
+#[test]
+fn test_go_multi_style_suite() {
+    let code = r#"
+package service
+
+import (
+    "context"
+    "fmt"
+)
+
+type Item struct {
+    ID   string
+    Name string
+}
+
+type Store interface {
+    Get(ctx context.Context, id string) (Item, error)
+}
+
+type Service struct {
+    Store
+    logger fmt.Stringer
+}
+
+func New(store Store, logger fmt.Stringer) *Service {
+    return &Service{Store: store, logger: logger}
+}
+
+func (s *Service) Handle(ctx context.Context, id string) (Item, error) {
+    item, err := s.Get(ctx, id)
+    if err != nil {
+        return Item{}, err
+    }
+    return item, nil
+}
+
+func Map[T any, U any](in []T, fn func(T) U) []U {
+    out := make([]U, 0, len(in))
+    for _, v := range in {
+        out = append(out, fn(v))
+    }
+    return out
+}
+"#;
+
+    let result = skeletonize(code, "go");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("type Store interface"));
+    assert!(result.skeleton.contains("type Service struct"));
+    assert!(result.skeleton.contains("func (s *Service) Handle"));
+    assert!(result.skeleton.contains("func Map[T any, U any]"));
+}
+
+#[test]
+fn test_c_multi_style_suite() {
+    let code = r#"
+#ifndef USER_REPO_H
+#define USER_REPO_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#define USER_MAX 128
+
+typedef int (*Comparator)(const void *a, const void *b);
+
+typedef struct User {
+    uint32_t id;
+    const char *name;
+    bool active;
+} User;
+
+typedef struct UserRepo {
+    User items[USER_MAX];
+    Comparator cmp;
+} UserRepo;
+
+void repo_init(UserRepo *repo, Comparator cmp);
+User *repo_find(UserRepo *repo, uint32_t id);
+
+#endif
+"#;
+
+    let result = skeletonize(code, "c");
+    println!("C Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("#ifndef USER_REPO_H"));
+    assert!(result.skeleton.contains("typedef int (*Comparator)"));
+    assert!(result.skeleton.contains("typedef struct User"));
+}
+
+#[test]
+fn test_json_varied_structures_suite() {
+    let code = r#"
+{
+    "name": "multi-config",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "lint": "eslint ."
+    },
+    "dependencies": {
+        "react": "^18.2.0",
+        "axios": "^1.6.0",
+        "zustand": "^4.5.0"
+    },
+    "routes": [
+        { "path": "/", "auth": false },
+        { "path": "/about", "auth": false },
+        { "path": "/admin", "auth": true }
+    ],
+    "flags": [true, false, null],
+    "nested": { "feature": { "enabled": true } }
+}
+"#;
+
+    let result = skeletonize(code, "json");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("scripts: dev, build, lint"));
+    assert!(result.skeleton.contains("dependencies: react@^18.2.0"));
+    assert!(result.skeleton.contains("routes: [\"/\", \"/about\", \"/admin\"]"));
+}
+
+#[test]
+fn test_css_varied_selectors_suite() {
+    let code = r#"
+@import url("reset.css");
+
+:root {
+    --brand: #ff8c00;
+    --space: 12px;
+}
+
+.btn, .link:hover {
+    color: var(--brand);
+    padding: var(--space);
+}
+
+@media (max-width: 900px) {
+    .btn {
+        padding: 8px;
+        display: block;
+    }
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+"#;
+
+    let result = skeletonize(code, "css");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("@import url"));
+    assert!(result.skeleton.contains(".btn"));
+    assert!(result.skeleton.contains("@media (max-width: 900px)"));
+    assert!(result.skeleton.contains("@keyframes"));
+}
+
+#[test]
+fn test_html_varied_structure_suite() {
+    let code = r#"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Suite</title>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/docs">Docs</a>
+      </nav>
+    </header>
+    <main>
+      <section>
+        <h2>Title</h2>
+      </section>
+      <aside>
+        <p>Sidebar</p>
+      </aside>
+    </main>
+    <template id="row">
+      <tr><td>Cell</td></tr>
+    </template>
+    <script src="/app.js"></script>
+  </body>
+</html>
+"#;
+
+    let result = skeletonize(code, "html");
+    println!("Skeleton:\n{}", result.skeleton);
+    assert!(result.skeleton.contains("<html>"));
+    assert!(result.skeleton.contains("<body>"));
+    assert!(result.skeleton.contains("<main> <!-- 2 children -->"));
+    assert!(result.skeleton.contains("<template>"));
+}
+
+fn run_fixture_benchmarks(label: &str, fixtures: &[&str]) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    println!("\n=== Fixture Benchmark: {} ===", label);
+    for rel in fixtures {
+        let path = root.join(rel);
+        assert!(path.exists(), "Missing fixture: {}", path.display());
+        let result = skeletonize_with_fixture_path(&path);
+        println!("\n--- Fixture: {} ---", rel);
+        println!(
+            "Lines: {} -> {} ({}% reduced)",
+            result.original_lines,
+            result.skeleton_lines,
+            (result.compression_ratio() * 100.0).round()
+        );
+        println!("Skeleton:\n{}", result.skeleton);
+        assert!(
+            !result.skeleton.is_empty(),
+            "Empty skeleton output for fixture {}",
+            rel
+        );
+    }
+}
+
+#[test]
+fn test_fixture_benchmarks_python() {
+    run_fixture_benchmarks(
+        "python",
+        &[
+            "python/requests__sessions.py",
+            "python/pandas__io_json__normalize.py",
+            "python/scikit_learn__model_selection__split.py",
+            "python/typer__main.py",
+            "python/langchain__agents__agent.py",
+        ],
+    );
+}
+
+#[test]
+fn test_fixture_benchmarks_js() {
+    run_fixture_benchmarks("js", &["js/express__application.js"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_jsx() {
+    run_fixture_benchmarks("jsx", &["jsx/react__Profiler.jsx"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_ts() {
+    run_fixture_benchmarks(
+        "ts",
+        &["ts/redux_toolkit__createSlice.ts", "ts/zod__index.ts"],
+    );
+}
+
+#[test]
+fn test_fixture_benchmarks_tsx() {
+    run_fixture_benchmarks("tsx", &["tsx/headlessui__combobox.tsx"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_rust() {
+    run_fixture_benchmarks("rust", &["rust/serde_json__de.rs"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_go() {
+    run_fixture_benchmarks("go", &["go/gin__context.go"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_c() {
+    run_fixture_benchmarks("c", &["c/curl__url.c"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_json() {
+    run_fixture_benchmarks("json", &["json/vite__package.json"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_css() {
+    run_fixture_benchmarks("css", &["css/normalize__normalize.css"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_html() {
+    run_fixture_benchmarks("html", &["html/cra__index.html"]);
+}
+
+#[test]
+fn test_fixture_benchmarks_all() {
+    run_fixture_benchmarks(
+        "all",
+        &[
+            // Python (priority)
+            "python/requests__sessions.py",
+            "python/pandas__io_json__normalize.py",
+            "python/scikit_learn__model_selection__split.py",
+            "python/typer__main.py",
+            "python/langchain__agents__agent.py",
+            // JavaScript / TypeScript
+            "js/express__application.js",
+            "jsx/react__Profiler.jsx",
+            "ts/redux_toolkit__createSlice.ts",
+            "ts/zod__index.ts",
+            "tsx/headlessui__combobox.tsx",
+            // Rust / Go / C
+            "rust/serde_json__de.rs",
+            "go/gin__context.go",
+            "c/curl__url.c",
+            // Config / Markup / Styles
+            "json/vite__package.json",
+            "css/normalize__normalize.css",
+            "html/cra__index.html",
+        ],
+    );
 }

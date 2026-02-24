@@ -617,8 +617,69 @@ fn is_simple_assignment(node: Node, source: &[u8], max_len: usize) -> bool {
         return true;
     }
 
+    // Check total length first
+    if text.len() > max_len {
+        return false;
+    }
+
+    // Parse assignment to get name and value
+    if let Some((name, value)) = parse_assignment(text) {
+        return should_keep_assignment(name, value);
+    }
+
     // Keep short assignments without complex expressions
-    !text.contains('(') && text.len() < max_len
+    !text.contains('(')
+}
+
+/// Parse an assignment into name and value
+fn parse_assignment(text: &str) -> Option<(&str, &str)> {
+    if let Some(eq_pos) = text.find('=') {
+        // Skip if it's ==, !=, <=, >=
+        if eq_pos > 0 && eq_pos < text.len() - 1 {
+            let before = text.as_bytes().get(eq_pos.saturating_sub(1));
+            let after = text.as_bytes().get(eq_pos + 1);
+            
+            if matches!(before, Some(b'=' | b'!' | b'<' | b'>')) || matches!(after, Some(b'=')) {
+                return None;
+            }
+
+            let name = text[..eq_pos].trim();
+            let value = text[eq_pos + 1..].trim();
+            return Some((name, value));
+        }
+    }
+    None
+}
+
+/// Determine if an assignment should be kept based on classification
+fn should_keep_assignment(name: &str, value: &str) -> bool {
+    // Always keep: CONSTANTS (all uppercase)
+    if name.len() > 1 && name.chars().all(|c| c.is_uppercase() || c == '_' || c.is_numeric()) {
+        return true;
+    }
+
+    // Always keep: paths
+    if looks_like_path(value) {
+        return true;
+    }
+
+    // Always keep: config-like names
+    let lower_name = name.to_lowercase();
+    if lower_name.starts_with("config") || lower_name.starts_with("params") ||
+       lower_name.starts_with("args") || lower_name.starts_with("options") ||
+       lower_name.starts_with("settings") || lower_name.starts_with("opts") {
+        return true;
+    }
+
+    // Remove: large object instantiations (DataFrame, tensor, etc.)
+    let lower_value = value.to_lowercase();
+    if lower_value.contains("dataframe") || lower_value.contains("tensor") ||
+       lower_value.contains("array") || lower_value.contains("model") ||
+       lower_value.contains("tokenizer") || lower_value.contains("dataset") {
+        return false;
+    }
+
+    true
 }
 
 // ============ State Contract / Path Detection ============

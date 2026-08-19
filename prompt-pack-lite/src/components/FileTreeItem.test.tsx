@@ -18,6 +18,8 @@ describe("FileTreeItem (Lite)", () => {
         onToggle: vi.fn(),
         onSetFull: vi.fn(),
         onToggleTier1: vi.fn(),
+        isCollapsed: false,
+        onToggleCollapse: vi.fn(),
     };
 
     it("renders the filename correctly", () => {
@@ -83,5 +85,48 @@ describe("FileTreeItem (Lite)", () => {
         const nameSpan = screen.getByText(longName);
         expect(nameSpan.className).toContain("whitespace-nowrap");
         expect(nameSpan.className).not.toContain("truncate");
+    });
+
+    it("renders no collapse chevron on a file row", () => {
+        render(<FileTreeItem {...defaultProps} />);
+        expect(screen.queryByLabelText(/^(Collapse|Expand) /)).toBeNull();
+    });
+
+    it("renders a collapse chevron on a directory row and does not select the directory when it is clicked", () => {
+        const dirEntry = {
+            path: "/test/src",
+            relative_path: "src",
+            is_dir: true,
+            size: 0,
+        };
+        const onToggle = vi.fn();
+        const onToggleCollapse = vi.fn();
+
+        render(
+            <FileTreeItem
+                {...defaultProps}
+                entry={dirEntry}
+                onToggle={onToggle}
+                onToggleCollapse={onToggleCollapse}
+            />
+        );
+
+        fireEvent.click(screen.getByLabelText("Collapse src"));
+        expect(onToggleCollapse).toHaveBeenCalledWith(dirEntry);
+        expect(onToggle).not.toHaveBeenCalled();
+    });
+
+    it("shows the expand chevron when the directory is collapsed", () => {
+        const dirEntry = {
+            path: "/test/src",
+            relative_path: "src",
+            is_dir: true,
+            size: 0,
+        };
+
+        render(<FileTreeItem {...defaultProps} entry={dirEntry} isCollapsed={true} />);
+
+        expect(screen.getByLabelText("Expand src")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Collapse src")).toBeNull();
     });
 });

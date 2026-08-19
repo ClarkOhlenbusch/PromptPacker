@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, GitCompare, Camera, Trash2 } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, CheckCircle2, Wand2, FolderOpen, ListChecks, GitCompare, Camera, Trash2, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import { FileEntry } from "./services/FileSystem";
 import { DevPerfPanel } from "./dev/DevPerfPanel";
@@ -41,6 +41,10 @@ export default function App() {
   // Selection State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [tier1Paths, setTier1Paths] = useState<Set<string>>(new Set()); // Full content
+
+  // Tree view state — relative paths of the collapsed directories. Collapse is a
+  // view filter only. It never changes the selection or the generated prompt.
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
 
   // Inputs
   const [preamble, setPreamble] = useState("");
@@ -253,6 +257,7 @@ export default function App() {
         if (selected !== projectPath) {
           setSelectedPaths(new Set());
           setTier1Paths(new Set());
+          setCollapsedDirs(new Set());
         }
         setProjectPath(selected);
         // Scan immediately for faster UX; watcher refreshes are debounced.
@@ -275,6 +280,14 @@ export default function App() {
     try {
       const entries = await invoke<FileEntry[]>("scan_project", { path });
       setFiles(entries);
+
+      // Keep the collapse state across a refresh, but drop directories that are gone.
+      setCollapsedDirs(prev => {
+        if (prev.size === 0) return prev;
+        const stillThere = new Set(entries.filter(e => e.is_dir).map(e => e.relative_path));
+        const next = new Set([...prev].filter(rp => stillThere.has(rp)));
+        return next.size === prev.size ? prev : next;
+      });
 
       // Auto-select README only if nothing is selected (initial load)
       // We need to access the CURRENT selectedPaths state.
@@ -343,6 +356,43 @@ export default function App() {
 
     setSelectedPaths(newSelected);
     setTier1Paths(newTier1);
+  };
+
+  // A row is hidden when any ANCESTOR directory is collapsed. The list is sorted
+  // lexicographically, so a directory's descendants are not contiguous after it
+  // ('src-notes.txt' sorts between 'src' and 'src/a.c'). An ancestor test is correct
+  // where a run-of-rows test is not. A collapsed directory stays visible itself.
+  const visibleFiles = useMemo(() => {
+    if (collapsedDirs.size === 0) return files;
+    return files.filter((f) => {
+      const parts = f.relative_path.split('/');
+      let prefix = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        prefix = i === 0 ? parts[0] : `${prefix}/${parts[i]}`;
+        if (collapsedDirs.has(prefix)) return false;
+      }
+      return true;
+    });
+  }, [files, collapsedDirs]);
+
+  const toggleCollapsed = (entry: FileEntry) => {
+    setCollapsedDirs(prev => {
+      const next = new Set(prev);
+      if (next.has(entry.relative_path)) {
+        next.delete(entry.relative_path);
+      } else {
+        next.add(entry.relative_path);
+      }
+      return next;
+    });
+  };
+
+  const collapseAll = () => {
+    setCollapsedDirs(new Set(files.filter(f => f.is_dir).map(f => f.relative_path)));
+  };
+
+  const expandAll = () => {
+    setCollapsedDirs(new Set());
   };
 
   const toggleTier1 = (path: string) => {
@@ -590,6 +640,24 @@ export default function App() {
                   >
                     <RefreshCw size={12} strokeWidth={2.5} className={loading ? "animate-spin" : ""} />
                   </button>
+
+                  <button
+                    onClick={collapseAll}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                    title="Collapse all directories"
+                    aria-label="Collapse all directories"
+                  >
+                    <ChevronsDownUp size={12} strokeWidth={2.5} />
+                  </button>
+
+                  <button
+                    onClick={expandAll}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-packer-blue/30 text-packer-text-muted hover:text-packer-blue transition-all shadow-sm active:scale-95"
+                    title="Expand all directories"
+                    aria-label="Expand all directories"
+                  >
+                    <ChevronsUpDown size={12} strokeWidth={2.5} />
+                  </button>
                 </div>
               )}
 
@@ -606,7 +674,7 @@ export default function App() {
             <span className="text-xs font-mono text-packer-blue bg-blue-50 px-2 py-0.5 rounded">{files.length}</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 overflow-auto custom-scrollbar">
             {files.length === 0 && !loading && (
               <button
                 onClick={handleOpenFolder}
@@ -629,8 +697,8 @@ export default function App() {
               </div>
             )}
 
-            <div className="py-2">
-              {files.map((entry) => (
+            <div className="py-2 min-w-max">
+              {visibleFiles.map((entry) => (
                 <FileTreeItem
                   key={entry.path}
                   entry={entry}
@@ -640,6 +708,8 @@ export default function App() {
                   onToggle={toggleSelection}
                   onSetFull={handleSetFull}
                   onToggleTier1={(e) => toggleTier1(e.path)}
+                  isCollapsed={collapsedDirs.has(entry.relative_path)}
+                  onToggleCollapse={toggleCollapsed}
                 />
               ))}
             </div>

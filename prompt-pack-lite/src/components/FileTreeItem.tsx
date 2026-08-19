@@ -43,7 +43,7 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
-      <div className="flex-1 flex items-center gap-3 overflow-hidden">
+      <div className="flex-1 flex items-center gap-3">
         {/* Custom Checkbox */}
         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shadow-sm
             ${isSelected ? 'bg-packer-blue border-packer-blue' : 'bg-white border-gray-300 group-hover:border-packer-blue'}`}>
@@ -55,7 +55,7 @@ export const FileTreeItem = ({ entry, depth, selectedPaths, tier1Paths, onToggle
           <FileCode size={18} className={`${isSelected ? 'text-packer-blue' : 'text-slate-400 group-hover:text-slate-600'} transition-colors`} strokeWidth={2} />
         }
 
-        <span className={`text-sm truncate font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
+        <span className={`text-sm whitespace-nowrap font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
           {entry.relative_path.split('/').pop()}
         </span>
       </div>

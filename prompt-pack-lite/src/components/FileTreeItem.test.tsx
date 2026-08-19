@@ -68,4 +68,20 @@ describe("FileTreeItem (Lite)", () => {
         fireEvent.click(screen.getByText("SKEL"));
         expect(defaultProps.onToggleTier1).toHaveBeenCalledWith(mockEntry);
     });
+
+    it("renders a very long name without truncation", () => {
+        const longName = "a_very_long_source_file_name_that_used_to_truncate_" + "x".repeat(70) + ".c";
+        const longEntry = {
+            path: "/test/" + longName,
+            relative_path: longName,
+            is_dir: false,
+            size: 100,
+        };
+
+        render(<FileTreeItem {...defaultProps} entry={longEntry} />);
+
+        const nameSpan = screen.getByText(longName);
+        expect(nameSpan.className).toContain("whitespace-nowrap");
+        expect(nameSpan.className).not.toContain("truncate");
+    });
 });

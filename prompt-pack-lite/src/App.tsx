@@ -606,7 +606,7 @@ export default function App() {
             <span className="text-xs font-mono text-packer-blue bg-blue-50 px-2 py-0.5 rounded">{files.length}</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 overflow-auto custom-scrollbar">
             {files.length === 0 && !loading && (
               <button
                 onClick={handleOpenFolder}
@@ -629,7 +629,7 @@ export default function App() {
               </div>
             )}
 
-            <div className="py-2">
+            <div className="py-2 min-w-max">
               {files.map((entry) => (
                 <FileTreeItem
                   key={entry.path}

@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
-const outputFile = path.join(rootDir, '..', 'PromptPackColab-chrome.zip');
+const outputFile = path.join(rootDir, '..', 'PromptPackerColab-chrome.zip');
 
 async function pack() {
     const output = fs.createWriteStream(outputFile);

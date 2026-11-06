@@ -4,7 +4,7 @@ The companion app that connects PromptPack's Agent Terminal to a coding agent on
 
 ## Install and use
 
-1. Check [Bridge releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true) for an installer. **No public Bridge installer has been published yet.** Until one is available, use the development instructions below to build a preview.
+1. Check [Bridge releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true) for an installer. If no installer is listed yet, use the development instructions below to build a preview.
 2. Install and open it:
    - **Mac:** open the universal `.dmg`, drag PromptPack Bridge to Applications, then open it. The same download supports Apple silicon and Intel Macs.
    - **Windows:** open `Setup.exe`. It installs for your user account and opens Bridge when finished. Use x64 for most PCs; an arm64 build is available for Windows on ARM.

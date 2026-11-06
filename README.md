@@ -34,7 +34,7 @@ Work with a coding agent inside your Colab notebook. PromptPack opens a terminal
 ### What you need
 
 - A Chrome browser, an editable Colab notebook, and the [PromptPack Colab extension preview](https://github.com/ClarkOhlenbusch/PromptPacker/raw/refs/heads/main/PromptPackerColab-chrome.zip). The [Chrome Web Store listing](https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll) is available for the published extension; use the preview build for the latest Agent Terminal changes.
-- **PromptPack Bridge**, a small companion app that runs on your computer. [Find Bridge downloads](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true). **There is currently no public Bridge installer release.** See the [Bridge guide](promptpack-bridge/README.md) to build a development preview.
+- **PromptPack Bridge**, a small companion app that runs on your computer. [Find Bridge downloads](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true). If no Bridge release is listed yet, see the [Bridge guide](promptpack-bridge/README.md) to build a development preview.
 - An installed and signed-in coding agent, such as Codex or Claude Code. Bridge offers links to their setup instructions. Custom command-line agents can also be configured.
 
 ### Start a session

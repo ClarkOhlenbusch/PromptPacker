@@ -77,7 +77,7 @@
 
 The Agent Terminal work is available in the [extension development build](https://github.com/ClarkOhlenbusch/PromptPacker/raw/refs/heads/main/PromptPackerColab-chrome.zip). Unzip it, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. Use this build for the latest notebook agent features.
 
-Agent Terminal also needs PromptPack Bridge and an installed, signed-in coding agent. **No Bridge installer release is published yet**; see the [Bridge setup guide](../promptpack-bridge/README.md) for the development build. Once Bridge is running, open an editable Colab notebook, open PromptPack, select **Agent Terminal**, and start your agent. Changes saved by the agent sync into the notebook; the agent's usual approvals apply.
+Agent Terminal also needs PromptPack Bridge and an installed, signed-in coding agent. If no Bridge installer is listed on the [releases page](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true), see the [Bridge setup guide](../promptpack-bridge/README.md) for the development build. Once Bridge is running, open an editable Colab notebook, open PromptPack, select **Agent Terminal**, and start your agent. Changes saved by the agent sync into the notebook; the agent's usual approvals apply.
 
 ### Manual Installation (Developer Mode)
 

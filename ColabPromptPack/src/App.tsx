@@ -6,6 +6,7 @@ import { Copy, FileText, RefreshCw, X, Wand2, FolderOpen, ListChecks, Settings, 
 import { FileTreeItem } from "./components/FileTreeItem";
 import { SettingsModal } from "./components/SettingsModal";
 import { OutputModal } from "./components/OutputModal";
+import { NotebookExport } from "./components/NotebookExport";
 import { DiffModal } from "./components/DiffModal";
 import { PackSummary } from "./components/PackSummary";
 import { AgentTerminalPanel } from "./components/AgentTerminalPanel";
@@ -469,6 +470,8 @@ export default function App() {
               </span>
             </button>
 
+              <div className="flex items-center gap-3">
+              <NotebookExport fs={fs} disabled={fileSelection.files.length === 0} />
               <button
                 onClick={handleGenerate}
                 disabled={generating || fileSelection.selectedPaths.size === 0}
@@ -481,6 +484,7 @@ export default function App() {
                 )}
                 GENERATE PROMPT
               </button>
+              </div>
           </div>}
         </div>
       </div>

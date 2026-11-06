@@ -70,7 +70,8 @@ export default function App() {
             return res.json() as Promise<BridgeRelease[]>;
          })
          .then(releases => {
-            const release = releases.find(item => item.tag_name.startsWith("bridge-v") && !item.draft && !item.prerelease && item.assets?.some(asset => /\.(dmg|exe|AppImage|deb)$/i.test(asset.name)));
+            const candidates = releases.filter(item => item.tag_name.startsWith("bridge-v") && !item.draft && item.assets?.some(asset => /\.(dmg|exe|AppImage|deb)$/i.test(asset.name)));
+            const release = candidates.find(item => !item.prerelease) || candidates[0];
             setBridgeStatus(release ? { state: "available", release } : { state: "unavailable" });
          })
          .catch(() => setBridgeStatus({ state: "error" }));
@@ -298,7 +299,7 @@ export default function App() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                      {bridgeStatus.state === "available" ? (
-                        <a href={bridgeStatus.release!.html_url} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700"><Download size={18} /> Download Bridge</a>
+                        <a href={bridgeStatus.release!.html_url} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700"><Download size={18} /> {bridgeStatus.release!.prerelease ? "Download Bridge preview" : "Download Bridge"}</a>
                      ) : (
                         <a href={COLAB_SETUP} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700">Bridge setup guide <ArrowRight size={18} /></a>
                      )}
@@ -308,7 +309,7 @@ export default function App() {
                      {bridgeStatus.state === "loading" && "Checking Bridge downloads…"}
                      {bridgeStatus.state === "unavailable" && <>Bridge installers are not published yet. See the <a className="underline" href={COLAB_SETUP}>setup guide</a> for the current preview.</>}
                      {bridgeStatus.state === "error" && <>We couldn’t check Bridge downloads. See <a className="underline" href={BRIDGE_RELEASES}>Bridge releases</a> and the <a className="underline" href={COLAB_SETUP}>setup guide</a>.</>}
-                     {bridgeStatus.state === "available" && <>Choose your operating system on the release page. Bridge runs locally; your coding agent is installed and signed in separately.</>}
+                     {bridgeStatus.state === "available" && <>{bridgeStatus.release!.prerelease && "Preview installers are unsigned and your computer may show a warning. "}Choose your operating system on the release page. Bridge runs locally; your coding agent is installed and signed in separately.</>}
                   </p>
                </div>
                <div className="overflow-hidden rounded-2xl border border-slate-700 bg-[#182635] shadow-2xl shadow-slate-900/20">

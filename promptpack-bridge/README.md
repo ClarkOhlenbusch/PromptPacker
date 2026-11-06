@@ -80,7 +80,7 @@ For smooth public installation, configure these repository secrets before publis
 
 An Apple Development certificate is not a substitute for Developer ID distribution. Unsigned preview builds may show operating-system warnings and are not the intended nontechnical-user installation experience. See [Electron's distribution guidance](https://www.electronjs.org/docs/latest/tutorial/tutorial-packaging).
 
-Publish the reviewed, signed draft as a stable `bridge-v*` release. The extension discovers that release and selects the appropriate installer; it ignores editor releases, drafts, and prereleases. Publishing the companion does not replace the editor's latest release.
+Publish the reviewed, signed draft as a stable `bridge-v*` release. The extension discovers that release and selects the appropriate installer. It ignores editor releases and drafts, and offers a preview release if no stable Bridge release is available. Publishing the companion does not replace the editor's latest release.
 
 ## Connection and execution
 

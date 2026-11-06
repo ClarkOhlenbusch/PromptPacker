@@ -9,13 +9,14 @@ interface Release {
 }
 
 export function selectBridgeDownload(releases: Release[], platform: string) {
-  const release = releases.find(item => item.tag_name.startsWith("bridge-v") && !item.draft && !item.prerelease);
+  const candidates = releases.filter(item => item.tag_name.startsWith("bridge-v") && !item.draft);
+  const release = candidates.find(item => !item.prerelease) || candidates[0];
   if (!release) return null;
   const match = /mac/i.test(platform) ? /mac-universal\.dmg$/
     : /win/i.test(platform) ? /windows-x64-Setup\.exe$/
     : /arm|aarch/i.test(platform) ? /linux-(?:arm64|aarch64)\.AppImage$/ : /linux-(?:x64|x86_64)\.AppImage$/;
   const asset = release.assets.find(item => match.test(item.name));
-  return { url: asset?.browser_download_url || release.html_url, allDownloads: release.html_url };
+  return { url: asset?.browser_download_url || release.html_url, allDownloads: release.html_url, isPreview: release.prerelease };
 }
 
 export async function getBridgeDownload(platform: string, signal: AbortSignal) {

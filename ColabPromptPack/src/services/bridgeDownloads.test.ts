@@ -20,3 +20,10 @@ it("does not advertise a draft or an unrelated product as a Bridge download", ()
   expect(selectBridgeDownload([{ ...bridge, tag_name: "v1.0.3" }, { ...bridge, draft: true }], "MacIntel")).toBeNull();
   expect(selectBridgeDownload([{ ...bridge, assets: [] }], "MacIntel")?.url).toBe(bridge.html_url);
 });
+
+
+it("offers a published preview when no stable Bridge release is available", () => {
+  const preview = { ...bridge, prerelease: true };
+  expect(selectBridgeDownload([preview], "MacIntel")).toMatchObject({ isPreview: true, url: "https://example.com/mac-universal.dmg" });
+  expect(selectBridgeDownload([preview, bridge], "MacIntel")?.isPreview).toBe(false);
+});

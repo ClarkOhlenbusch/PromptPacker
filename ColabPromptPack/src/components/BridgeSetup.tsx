@@ -8,7 +8,7 @@ interface BridgeSetupProps {
 }
 
 export function BridgeSetup({ status, checkAgain }: BridgeSetupProps) {
-  const [download, setDownload] = useState<{ url: string; allDownloads: string } | null | undefined>();
+  const [download, setDownload] = useState<{ url: string; allDownloads: string; isPreview?: boolean } | null | undefined>();
   useEffect(() => {
     if (status !== "missing") return;
     const controller = new AbortController();
@@ -33,6 +33,7 @@ export function BridgeSetup({ status, checkAgain }: BridgeSetupProps) {
         {download === null
           ? <span className="text-slate-600">Bridge installers haven’t been published yet.</span>
           : <a href={download?.url || BRIDGE_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded bg-packer-blue text-white font-semibold">Download Bridge</a>}
+        {download?.isPreview && <span className="text-slate-600">Preview installer; your operating system may show an unsigned app warning.</span>}
         {download && <a href={download.allDownloads} target="_blank" rel="noopener noreferrer" className="text-packer-blue underline underline-offset-2">Other computers</a>}
         {/Mac|Win/i.test(navigator.platform)
           ? <a href={BRIDGE_OPEN_URL} className="text-packer-blue underline underline-offset-2">Already installed? Open Bridge</a>

@@ -1,5 +1,12 @@
 import { IFileSystem, FileEntry } from "./FileSystem";
 import { computeDiff, DiffLine } from "../utils/diff";
+import {
+  ApplyCellUpdatesPayload,
+  ApplyCellUpdatesResult,
+  ExecuteCellsRequest,
+  ExecuteCellsResult,
+  NotebookMetadata,
+} from "../types/agent";
 
 export type { DiffLine };
 
@@ -30,30 +37,35 @@ interface CellData {
   content: string;
   output?: string;
   cellType?: 'code' | 'markdown';
+  cellId?: string;
 }
 
 /** Incrementing request ID for message correlation */
 let nextRequestId = 1;
 
 /**
- * Request cells from the content script via postMessage through the parent window.
+ * Send a command to the parent content script and await a typed response.
  */
-async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
+async function sendParentCommand<TResponse = any, TPayload = any>(
+  type: string,
+  responseType: string,
+  payload?: TPayload,
+  timeoutMs = 10000
+): Promise<TResponse | null> {
   const requestId = nextRequestId++;
-  const TIMEOUT_MS = 10000;
 
   return new Promise((resolve) => {
     let settled = false;
 
     const handleResponse = (event: MessageEvent) => {
       if (
-        event.data?.type === "PROMPTPACK_CELLS_RESPONSE" &&
+        event.data?.type === responseType &&
         event.data?.requestId === requestId
       ) {
         if (!settled) {
           settled = true;
           window.removeEventListener("message", handleResponse);
-          resolve(event.data.payload ?? null);
+          resolve((event.data.payload ?? null) as TResponse | null);
         }
       }
     };
@@ -61,7 +73,7 @@ async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
     window.addEventListener("message", handleResponse);
 
     window.parent.postMessage(
-      { type: "PROMPTPACK_GET_CELLS", requestId },
+      { type, requestId, payload },
       "*"
     );
 
@@ -69,49 +81,28 @@ async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
       if (!settled) {
         settled = true;
         window.removeEventListener("message", handleResponse);
-        console.error("Colab iframe: GET_CELLS timed out after", TIMEOUT_MS, "ms");
+        console.error("Colab iframe: Command timed out:", type);
         resolve(null);
       }
-    }, TIMEOUT_MS);
+    }, timeoutMs);
   });
+}
+
+/**
+ * Request cells from the content script via postMessage through the parent window.
+ */
+async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
+  return sendParentCommand<CellsResponse>(
+    "PROMPTPACK_GET_CELLS",
+    "PROMPTPACK_CELLS_RESPONSE"
+  );
 }
 
 /**
  * Send a snapshot command to the content script and wait for acknowledgement.
  */
 async function sendSnapshotCommand(type: string): Promise<any> {
-  const requestId = nextRequestId++;
-  const TIMEOUT_MS = 10000;
-
-  return new Promise((resolve) => {
-    let settled = false;
-
-    const handleResponse = (event: MessageEvent) => {
-      if (
-        event.data?.type === "PROMPTPACK_SNAPSHOT_RESPONSE" &&
-        event.data?.requestId === requestId
-      ) {
-        if (!settled) {
-          settled = true;
-          window.removeEventListener("message", handleResponse);
-          resolve(event.data.payload ?? null);
-        }
-      }
-    };
-
-    window.addEventListener("message", handleResponse);
-
-    window.parent.postMessage({ type, requestId }, "*");
-
-    setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        window.removeEventListener("message", handleResponse);
-        console.error("Colab iframe: Snapshot command timed out:", type);
-        resolve(null);
-      }
-    }, TIMEOUT_MS);
-  });
+  return sendParentCommand<any>(type, "PROMPTPACK_SNAPSHOT_RESPONSE");
 }
 
 export class ColabFileSystem implements IFileSystem {
@@ -153,6 +144,7 @@ export class ColabFileSystem implements IFileSystem {
       content: cell.content,
       output: cell.output,
       cellType: cell.cellType,
+      cellId: cell.cellId,
     }));
   }
 
@@ -235,5 +227,61 @@ export class ColabFileSystem implements IFileSystem {
   async clearHistory(_cellPath?: string): Promise<boolean> {
     window.parent.postMessage({ type: "PROMPTPACK_CLEAR_SNAPSHOT" }, "*");
     return true;
+  }
+
+  async applyCellUpdates(payload: ApplyCellUpdatesPayload): Promise<ApplyCellUpdatesResult> {
+    const fallback: ApplyCellUpdatesResult = {
+      success: false,
+      results: payload.updates.map((update) => ({
+        cellPath: update.cellPath,
+        applied: false,
+        reason: "No response from Colab bridge",
+        changeId: update.changeId,
+      })),
+    };
+
+    const result = await sendParentCommand<ApplyCellUpdatesResult, ApplyCellUpdatesPayload>(
+      "PROMPTPACK_APPLY_CELL_UPDATES",
+      "PROMPTPACK_APPLY_RESULT",
+      payload
+    );
+
+    if (!result) return fallback;
+
+    result.results.forEach((entry) => {
+      if (entry.applied) {
+        const sourceUpdate = payload.updates.find((u) => u.cellPath === entry.cellPath);
+        if (sourceUpdate) {
+          this.cellContentCache.set(entry.cellPath, sourceUpdate.newContent);
+        }
+      }
+    });
+
+    return result;
+  }
+
+  async executeCells(request: ExecuteCellsRequest): Promise<ExecuteCellsResult> {
+    const fallback: ExecuteCellsResult = {
+      requestId: request.requestId,
+      status: "error",
+      executed: 0,
+      errors: ["No response from Colab bridge"],
+    };
+
+    const result = await sendParentCommand<ExecuteCellsResult, ExecuteCellsRequest>(
+      "PROMPTPACK_EXECUTE_CELLS",
+      "PROMPTPACK_EXECUTION_RESULT",
+      request,
+      60000
+    );
+
+    return result ?? fallback;
+  }
+
+  async getNotebookMetadata(): Promise<NotebookMetadata | null> {
+    return sendParentCommand<NotebookMetadata>(
+      "PROMPTPACK_GET_NOTEBOOK_METADATA",
+      "PROMPTPACK_NOTEBOOK_METADATA_RESULT"
+    );
   }
 }

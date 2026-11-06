@@ -7,6 +7,7 @@ export interface FileEntry {
   output?: string;
   content?: string; // Cell content (available in Colab extension)
   cellType?: 'code' | 'markdown'; // Cell type (Colab extension only)
+  cellId?: string; // Persistent Colab cell ID, independent of notebook order
 }
 
 export interface IFileSystem {

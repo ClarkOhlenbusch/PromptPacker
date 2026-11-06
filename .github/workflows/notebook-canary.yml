@@ -1,0 +1,83 @@
+name: Notebook checks and Colab canary
+
+on:
+  pull_request:
+    paths:
+      - 'ColabPromptPack/**'
+      - 'promptpack-bridge/**'
+      - '.github/workflows/notebook-canary.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 12 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  notebook-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            ColabPromptPack/package-lock.json
+            promptpack-bridge/package-lock.json
+      - name: Install bridge dependencies
+        working-directory: promptpack-bridge
+        run: npm ci
+      - name: Test bridge sessions and notebook sync
+        working-directory: promptpack-bridge
+        run: npm test
+      - name: Install extension dependencies
+        working-directory: ColabPromptPack
+        run: npm ci
+      - name: Build and test the extension
+        working-directory: ColabPromptPack
+        run: |
+          npm run build
+          npx vitest run
+      - name: Exercise terminal and extension against a fixture notebook
+        working-directory: ColabPromptPack
+        run: node scripts/verify-agent-workflow.cjs
+
+  live-colab-canary:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: notebook-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            ColabPromptPack/package-lock.json
+            promptpack-bridge/package-lock.json
+      - name: Install bridge dependencies
+        working-directory: promptpack-bridge
+        run: npm ci
+      - name: Install extension dependencies
+        working-directory: ColabPromptPack
+        run: npm ci
+      - name: Check Chrome availability
+        run: google-chrome --version
+      - name: Exercise an isolated public Colab notebook
+        working-directory: ColabPromptPack
+        env:
+          PROMPTPACK_CANARY_ARTIFACTS: ${{ runner.temp }}/promptpack-canary
+        run: node scripts/verify-colab-cell-creation.cjs
+      - name: Save canary diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colab-canary-diagnostics
+          path: |
+            ${{ runner.temp }}/promptpack-canary/*.png
+            ${{ runner.temp }}/promptpack-canary/*.ipynb
+          if-no-files-found: ignore
+          retention-days: 7

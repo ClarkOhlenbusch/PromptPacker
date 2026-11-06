@@ -1,0 +1,8 @@
+FROM node:24-bookworm
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=3 update -qq && apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libx11-xcb1 \
+    libatk-bridge2.0-0 libdrm2 libxshmfence1 libxrandr2 libcups2 \
+    xvfb xauth fakeroot rpm dbus \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work

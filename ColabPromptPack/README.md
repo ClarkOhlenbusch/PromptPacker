@@ -395,6 +395,38 @@ By default, Quick Copy includes only code. To include cell outputs:
 
 ---
 
+## 🤖 Agent Terminal (Beta)
+
+PromptPack Colab can now connect to a local `PromptPack Bridge` companion service to run CLI coding agents (for example, Codex) against a virtual notebook workspace.
+
+### How it works
+
+1. PromptPack extracts notebook cells into isolated virtual files.
+2. Bridge runs your local CLI agent in that workspace.
+3. The CLI agent uses its normal approval settings before writing cell files.
+4. Saved edits sync automatically to live Colab cells; PromptPack adds no second edit approval.
+5. Execution requests are queued for explicit approval before running cells/ranges/all.
+
+### Local setup
+
+Install and open **PromptPack Bridge**, the desktop companion for macOS, Windows, and Linux. It bundles its own runtime; no Node.js, Python, or Terminal commands are needed to run the app. [Bridge downloads and setup](../promptpack-bridge/README.md#install-and-use).
+
+If Bridge is not running, Agent Terminal shows a short setup guide with **Download Bridge**, **Open Bridge**, and automatic connection detection. The download selects a published Bridge installer for your computer and never substitutes the unrelated PromptPack Lite editor. Before a Bridge release is published, the setup guide says downloads are not available yet.
+
+Then open PromptPack in Colab, switch to **Agent Terminal**, choose your agent, and click **Start session**. It connects to the bridge automatically and resumes an existing session when available. Once running, setup controls disappear and the terminal fills the panel.
+
+Agent mode docks beside Colab. You can interact with the notebook while the terminal stays open, or hide PromptPack and use **Open PromptPack** to return to the same terminal and session. Switching between Prompt Builder and Agent Terminal also preserves the terminal. **Stop** in the terminal header explicitly ends the agent process.
+
+Agents can append new code and Markdown cells by saving `.py` and `.md` files in `notebook/new_cells/`. Each file becomes one final cell automatically; subsequent edits to that file update the same cell. New sessions include the agent instructions. A separate `.ipynb` file is not imported. After updating both Bridge and the extension, restart Bridge, reload the extension, refresh Colab, and start a fresh session to use cell creation. [Cell creation details and limits](../promptpack-bridge/README.md#adding-notebook-cells).
+
+**Notebook changes** keeps before/after history collapsed beneath the terminal. Sync conflicts appear automatically when attention is needed. If the same cell changed in Colab, the agent's edit is preserved; it does not silently replace your notebook changes. Retry sync or discard only the unsynced edits from that entry. Markdown comments such as `<!-- This is a test. -->` are only visible when editing the Markdown cell's source.
+
+Under **Session tools**, **Refresh notebook context** reads the current Colab notebook into the agent's files after you edit the notebook yourself. It refuses to overwrite unsynced agent edits; let sync finish or resolve those conflicts first. **Clear terminal** is also available there. Notebook execution requests appear only when pending and still use the explicit **Run** approval.
+
+To verify panel persistence and automatic sync in an isolated Chrome profile, run `node scripts/verify-agent-workflow.cjs` from `ColabPromptPack`. This uses the real extension, a fixture notebook, and a dummy local agent; it does not access your active notebook or bridge.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Here's how to get started:

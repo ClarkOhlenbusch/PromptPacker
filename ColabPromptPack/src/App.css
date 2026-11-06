@@ -8,3 +8,16 @@
     --color-packer-text-muted: #5B6A78;
     --color-packer-white: #FFFFFF;
 }
+
+.agent-terminal {
+    position: relative;
+}
+
+.agent-terminal .xterm {
+    height: 100%;
+    padding: 10px;
+}
+
+.agent-terminal .xterm-viewport {
+    border-radius: 0;
+}

@@ -1,0 +1,152 @@
+name: Package PromptPack Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'bridge-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mac-universal
+            os: macos-15
+            args: --mac --universal
+          - name: windows-x64
+            os: windows-latest
+            args: --win --x64
+          - name: windows-arm64
+            os: windows-11-arm
+            args: --win --arm64
+          - name: linux-x64
+            os: ubuntu-24.04
+            args: --linux --x64
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            args: --linux --arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: promptpack-bridge
+        shell: bash
+    env:
+      CSC_LINK: ${{ (startsWith(matrix.name, 'mac') && secrets.MAC_CSC_LINK) || (startsWith(matrix.name, 'windows') && secrets.WIN_CSC_LINK) || '' }}
+      CSC_KEY_PASSWORD: ${{ (startsWith(matrix.name, 'mac') && secrets.MAC_CSC_KEY_PASSWORD) || (startsWith(matrix.name, 'windows') && secrets.WIN_CSC_KEY_PASSWORD) || '' }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: promptpack-bridge/package-lock.json
+      - name: Check tagged version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          BRIDGE_RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e 'const p=require("./package.json");if(process.env.BRIDGE_RELEASE_TAG!==`bridge-v${p.version}`)throw new Error("Tag must match Bridge package version")'
+      - run: npm ci
+      - run: npm test
+      - name: Prepare macOS notarization credentials
+        if: startsWith(matrix.name, 'mac')
+        env:
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          if (process.env.APPLE_API_KEY_CONTENT) {
+            const key = path.join(process.env.RUNNER_TEMP, 'PromptPack-notary.p8');
+            fs.writeFileSync(key, process.env.APPLE_API_KEY_CONTENT, { mode: 0o600 });
+            fs.appendFileSync(process.env.GITHUB_ENV, `APPLE_API_KEY=${key}\n`);
+          }
+          JS
+      - name: Smoke-test desktop runtime
+        if: runner.os != 'Linux'
+        run: npm run desktop:smoke
+      - name: Smoke-test Linux desktop runtime
+        if: runner.os == 'Linux'
+        run: timeout 120s xvfb-run -a npm run desktop:smoke -- --no-sandbox
+      - name: Build installers
+        run: npm run dist -- ${{ matrix.args }}
+      - name: Smoke-test packaged macOS app
+        if: startsWith(matrix.name, 'mac')
+        run: '"release/mac-universal/PromptPack Bridge.app/Contents/MacOS/PromptPack Bridge" --smoke-test'
+      - name: Smoke-test packaged Windows app
+        if: runner.os == 'Windows'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          const dir = fs.readdirSync('release').find(name => name.endsWith('unpacked'));
+          const result = spawnSync(path.resolve('release', dir, 'PromptPack Bridge.exe'), ['--smoke-test'], { stdio: 'inherit', timeout: 120000, env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' } });
+          if (result.status !== 0) process.exit(result.status || 1);
+          JS
+      - name: Smoke-test packaged Linux app
+        if: runner.os == 'Linux'
+        run: |
+          executable=$(find release -maxdepth 2 -name promptpack-bridge -type f | head -1)
+          timeout 120s xvfb-run -a "$executable" --smoke-test --no-sandbox
+      - name: Generate download checksums
+        env:
+          BRIDGE_BUILD_NAME: ${{ matrix.name }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const files = fs.readdirSync('release').filter(name => /\.(dmg|zip|exe|AppImage|deb)$/.test(name));
+          const sums = files.map(name => `${crypto.createHash('sha256').update(fs.readFileSync(`release/${name}`)).digest('hex')}  ${name}`).join('\n');
+          fs.writeFileSync(`release/checksums-${process.env.BRIDGE_BUILD_NAME}.txt`, sums + '\n');
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-${{ matrix.name }}
+          path: |
+            promptpack-bridge/release/*.dmg
+            promptpack-bridge/release/*.zip
+            promptpack-bridge/release/*.exe
+            promptpack-bridge/release/*.AppImage
+            promptpack-bridge/release/*.deb
+            promptpack-bridge/release/checksums-*.txt
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/bridge-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bridge-*
+          merge-multiple: true
+          path: installers
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: PromptPack Bridge ${{ github.ref_name }}
+          draft: true
+          make_latest: 'false'
+          body: |
+            Download PromptPack Bridge for your computer, install it, and open it.
+            When you see **Ready for Colab**, return to PromptPack and click **Start session**.
+
+            - **Mac:** download the universal `.dmg`, then drag PromptPack Bridge to Applications.
+            - **Windows:** open the `Setup.exe` installer. Use x64 for most PCs or arm64 for Windows on ARM.
+            - **Linux:** install the `.deb` on Debian/Ubuntu, or use the `.AppImage` on other distributions.
+
+            Bridge includes its own runtime. Node.js and Python are not required.
+            Install and sign in to your chosen coding agent separately.
+
+            Maintainer: verify signing/notarization before publishing this draft for general users.
+          files: installers/*

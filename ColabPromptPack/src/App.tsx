@@ -1,16 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getFileSystem } from "./services/FileSystem";
 import { generatePrompt } from "./utils/promptGenerator";
 import { generateAutoPreamble } from "./utils/autoPreamble";
-import { Copy, FileText, RefreshCw, X, Wand2, FolderOpen, ListChecks, Settings, Terminal, GitCompare } from "lucide-react";
+import { Copy, FileText, RefreshCw, X, Wand2, FolderOpen, ListChecks, Settings, Terminal, GitCompare, Bot } from "lucide-react";
 import { FileTreeItem } from "./components/FileTreeItem";
 import { SettingsModal } from "./components/SettingsModal";
 import { OutputModal } from "./components/OutputModal";
 import { DiffModal } from "./components/DiffModal";
 import { PackSummary } from "./components/PackSummary";
+import { AgentTerminalPanel } from "./components/AgentTerminalPanel";
 import { useFileSelection } from "./hooks/useFileSelection";
 import { useSettings } from "./hooks/useSettings";
 import { useDiffs } from "./hooks/useDiffs";
+import { useAgentBridge } from "./hooks/useAgentBridge";
 import { useResizablePanel } from "./hooks/useResizablePanel";
 import "./App.css";
 
@@ -21,6 +23,7 @@ export default function App() {
   const fileSelection = useFileSelection();
   const settings = useSettings();
   const diffs = useDiffs(fs);
+  const agentBridge = useAgentBridge(fs, fileSelection.files);
   const { leftPanelWidth, isResizing, handleMouseDown } = useResizablePanel();
 
   // Local UI state
@@ -31,11 +34,17 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [includeFileTree, setIncludeFileTree] = useState(true);
+  const [activeTab, setActiveTab] = useState<"prompt" | "agent">("prompt");
+  const [hasOpenedAgent, setHasOpenedAgent] = useState(false);
+
+  useEffect(() => {
+    window.parent.postMessage({ type: "PROMPTPACK_PANEL_MODE", mode: activeTab }, "*");
+  }, [activeTab]);
 
   // Close Overlay Logic
-  const handleCloseOverlay = () => {
+  const handleCloseOverlay = useCallback(() => {
     window.parent.postMessage({ type: "CLOSE_PROMPTPACK" }, "*");
-  };
+  }, []);
 
   // Auto-scan on mount
   useEffect(() => {
@@ -58,12 +67,19 @@ export default function App() {
           settings.setRecordingShortcutType(null);
         }
       } else {
+        if (activeTab === "agent") {
+          return;
+        }
         handleCloseOverlay();
       }
     };
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (activeTab === "agent") {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         handleEscapeAction();
       }
     };
@@ -80,7 +96,7 @@ export default function App() {
       window.removeEventListener("keydown", handleGlobalKeyDown);
       window.removeEventListener("message", handleMessage);
     };
-  }, [diffs, showOutput, settings, handleCloseOverlay]);
+  }, [diffs, showOutput, settings, activeTab, handleCloseOverlay]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -144,7 +160,7 @@ export default function App() {
         <button
           onClick={handleCloseOverlay}
           className="bg-white/80 hover:bg-red-50 text-packer-text-muted hover:text-red-500 p-1.5 rounded-full shadow-sm border border-slate-200 transition-all"
-          title="Close PromptPack"
+          title="Hide PromptPack — your agent keeps running"
         >
           <X size={20} strokeWidth={2.5} />
         </button>
@@ -154,7 +170,8 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Pane: File Explorer */}
         <div
-          style={{ width: leftPanelWidth }}
+          hidden={activeTab === "agent"}
+          style={{ width: leftPanelWidth, display: activeTab === "agent" ? "none" : undefined }}
           className="flex-shrink-0 flex flex-col bg-white border-r border-packer-border"
         >
           {/* Header */}
@@ -326,6 +343,7 @@ export default function App() {
 
         {/* Resize Handle */}
         <div
+          style={{ display: activeTab === "agent" ? "none" : undefined }}
           onMouseDown={handleMouseDown}
           className={`w-1 flex-shrink-0 cursor-col-resize hover:bg-packer-blue/30 transition-colors relative group ${isResizing ? "bg-packer-blue/50" : "bg-packer-border"
             }`}
@@ -337,70 +355,109 @@ export default function App() {
 
         {/* Right Pane: Configuration */}
         <div className="flex-1 flex flex-col bg-white min-w-0">
-          <div className="flex-1 overflow-y-auto p-10">
-            <div className="max-w-3xl mx-auto space-y-10">
-              {/* Context Section */}
-              <div className="space-y-6">
-                <div className="flex items-center gap-3 pb-2 border-b border-packer-border">
-                  <div className="bg-blue-50 p-1.5 rounded text-packer-blue">
-                    <FileText size={20} strokeWidth={2} />
-                  </div>
-                  <h2 className="text-lg font-bold text-packer-grey">
-                    Context & Goal
-                  </h2>
-                </div>
+          <div className="px-5 pt-5 pr-12 border-b border-packer-border bg-white">
+            <div className="max-w-4xl mx-auto flex gap-2">
+              <button
+                onClick={() => setActiveTab("prompt")}
+                className={`px-4 py-2 rounded-t-md border border-b-0 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === "prompt"
+                  ? "bg-blue-50 text-packer-blue border-blue-200"
+                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <FileText size={14} /> Prompt Builder
+                </span>
+              </button>
+              <button
+                onClick={() => { setHasOpenedAgent(true); setActiveTab("agent"); }}
+                className={`px-4 py-2 rounded-t-md border border-b-0 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === "agent"
+                  ? "bg-blue-50 text-packer-blue border-blue-200"
+                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Bot size={14} /> Agent Terminal
+                </span>
+              </button>
+            </div>
+          </div>
 
-                <div className="grid gap-8">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-end">
-                      <label className="text-sm font-bold text-packer-grey uppercase tracking-wide text-[11px]">
-                        Preamble / Context
-                      </label>
-                      <button
-                        onClick={handleAutoFill}
-                        disabled={generating}
-                        className="text-[10px] font-bold text-packer-blue hover:text-packer-blue-dark flex items-center gap-1 uppercase tracking-wide transition-colors"
-                      >
-                        <Wand2 size={12} /> Auto-Fill
-                      </button>
+          <div className={`flex-1 overflow-y-auto ${activeTab === "agent" ? "p-4" : "p-8"}`}>
+            <div className="max-w-4xl mx-auto space-y-8">
+              {activeTab === "prompt" ? (
+                <>
+                  {/* Context Section */}
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3 pb-2 border-b border-packer-border">
+                      <div className="bg-blue-50 p-1.5 rounded text-packer-blue">
+                        <FileText size={20} strokeWidth={2} />
+                      </div>
+                      <h2 className="text-lg font-bold text-packer-grey">
+                        Context & Goal
+                      </h2>
                     </div>
-                    <textarea
-                      className="w-full bg-white border border-packer-border rounded p-4 text-sm text-packer-grey focus:border-packer-blue focus:ring-1 focus:ring-packer-blue focus:outline-none min-h-[120px] placeholder:text-gray-300 transition-all shadow-subtle"
-                      placeholder="Describe your project stack, conventions, or specific requirements..."
-                      value={preamble}
-                      onChange={(e) => setPreamble(e.target.value)}
-                    />
+
+                    <div className="grid gap-8">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-end">
+                          <label className="text-sm font-bold text-packer-grey uppercase tracking-wide text-[11px]">
+                            Preamble / Context
+                          </label>
+                          <button
+                            onClick={handleAutoFill}
+                            disabled={generating}
+                            className="text-[10px] font-bold text-packer-blue hover:text-packer-blue-dark flex items-center gap-1 uppercase tracking-wide transition-colors"
+                          >
+                            <Wand2 size={12} /> Auto-Fill
+                          </button>
+                        </div>
+                        <textarea
+                          className="w-full bg-white border border-packer-border rounded p-4 text-sm text-packer-grey focus:border-packer-blue focus:ring-1 focus:ring-packer-blue focus:outline-none min-h-[120px] placeholder:text-gray-300 transition-all shadow-subtle"
+                          placeholder="Describe your project stack, conventions, or specific requirements..."
+                          value={preamble}
+                          onChange={(e) => setPreamble(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-sm font-bold text-packer-grey uppercase tracking-wide text-[11px]">
+                          Task / Query
+                        </label>
+                        <textarea
+                          className="w-full bg-white border border-packer-border rounded p-4 text-sm text-packer-grey focus:border-packer-blue focus:ring-1 focus:ring-packer-blue focus:outline-none min-h-[100px] placeholder:text-gray-300 transition-all shadow-subtle"
+                          placeholder="What should the AI do with this context?"
+                          value={goal}
+                          onChange={(e) => setGoal(e.target.value)}
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-sm font-bold text-packer-grey uppercase tracking-wide text-[11px]">
-                      Task / Query
-                    </label>
-                    <textarea
-                      className="w-full bg-white border border-packer-border rounded p-4 text-sm text-packer-grey focus:border-packer-blue focus:ring-1 focus:ring-packer-blue focus:outline-none min-h-[100px] placeholder:text-gray-300 transition-all shadow-subtle"
-                      placeholder="What should the AI do with this context?"
-                      value={goal}
-                      onChange={(e) => setGoal(e.target.value)}
-                    />
-                  </div>
-                </div>
+                  {/* Pack Summary Card */}
+                  <PackSummary
+                    files={fileSelection.files}
+                    selectedPaths={fileSelection.selectedPaths}
+                    tier1Paths={fileSelection.tier1Paths}
+                    includeFileTree={includeFileTree}
+                    preamble={preamble}
+                    goal={goal}
+                    onToggleFileTree={() => setIncludeFileTree(!includeFileTree)}
+                  />
+                </>
+              ) : null}
+              <div hidden={activeTab !== "agent"}>
+                {hasOpenedAgent && (
+                <AgentTerminalPanel
+                  agentBridge={agentBridge}
+                  fileCount={fileSelection.files.filter((f) => !f.is_dir).length}
+                />
+                )}
               </div>
-
-              {/* Pack Summary Card */}
-              <PackSummary
-                files={fileSelection.files}
-                selectedPaths={fileSelection.selectedPaths}
-                tier1Paths={fileSelection.tier1Paths}
-                includeFileTree={includeFileTree}
-                preamble={preamble}
-                goal={goal}
-                onToggleFileTree={() => setIncludeFileTree(!includeFileTree)}
-              />
             </div>
           </div>
 
           {/* Action Footer */}
-          <div className="p-6 border-t border-packer-border bg-white flex justify-between items-center gap-4 z-10">
+          {activeTab === "prompt" && <div className="p-4 border-t border-packer-border bg-white flex justify-between items-center gap-4 z-10">
             <button
               onClick={() => settings.setShowSettings(true)}
               className="px-4 py-2.5 flex items-center gap-2 text-packer-text-muted hover:bg-slate-50 hover:text-packer-grey rounded-md transition-colors border border-packer-border shadow-sm active:scale-95"
@@ -412,19 +469,19 @@ export default function App() {
               </span>
             </button>
 
-            <button
-              onClick={handleGenerate}
-              disabled={generating || fileSelection.selectedPaths.size === 0}
-              className="px-8 py-3 bg-packer-blue hover:bg-[#1a252f] disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-bold tracking-wide text-white transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 transform active:scale-[0.98]"
-            >
-              {generating ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <Copy size={18} strokeWidth={2.5} />
-              )}
-              GENERATE PROMPT
-            </button>
-          </div>
+              <button
+                onClick={handleGenerate}
+                disabled={generating || fileSelection.selectedPaths.size === 0}
+                className="px-8 py-3 bg-packer-blue hover:bg-[#1a252f] disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-bold tracking-wide text-white transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 transform active:scale-[0.98]"
+              >
+                {generating ? (
+                  <RefreshCw className="animate-spin" size={18} />
+                ) : (
+                  <Copy size={18} strokeWidth={2.5} />
+                )}
+                GENERATE PROMPT
+              </button>
+          </div>}
         </div>
       </div>
 

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PromptPack Bridge</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><img src="assets/icon.png" width="38" height="38" alt=""><span>PromptPack Bridge</span></header>
+    <section class="status-card">
+      <span id="status-icon" class="status-icon" aria-hidden="true">…</span>
+      <h1 id="title">Starting your bridge…</h1>
+      <p id="message">This app connects your coding agent to Google Colab.</p>
+      <button id="retry" hidden>Try again</button>
+      <button id="colab" hidden>Open Colab</button>
+    </section>
+    <section id="agents" hidden aria-label="Your coding agents">
+      <h2>Your coding agents</h2>
+      <div class="agent"><span>Codex</span><span id="codex-status">Checking…</span><button id="codex-help" class="link">Set up Codex</button></div>
+      <div class="agent"><span>Claude Code</span><span id="claude-status">Checking…</span><button id="claude-help" class="link">Set up Claude Code</button></div>
+      <p class="hint">Sign in to your chosen agent when its terminal opens in PromptPack.</p>
+    </section>
+    <footer>
+      <p id="background-note">Keep this app open while using Agent Terminal.</p>
+      <label id="login-option" hidden><input id="login" type="checkbox"> Open Bridge when I sign in to my computer</label>
+      <div class="footer-row"><span id="version"></span><button id="quit" class="link">Quit Bridge</button></div>
+    </footer>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

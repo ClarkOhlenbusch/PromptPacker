@@ -13,6 +13,7 @@ interface Cell {
     size: number;
     line_count: number;
     cellType?: 'code' | 'markdown';
+    cellId?: string;
 }
 
 export { };
@@ -43,38 +44,81 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
 
     let overlayContainer: HTMLDivElement | null = null;
     let overlayIframe: HTMLIFrameElement | null = null;
+    let overlayVisible = false;
+    let panelMode: "prompt" | "agent" = "prompt";
+    let reopenButton: HTMLButtonElement | null = null;
     let cachedCells: Cell[] = [];
     let pendingQuickCopy = false;
     let pendingCopyAbove = false;
     let pendingCopyBelow = false;
     let injectedScriptReady = false;
     let pendingCellRequests: boolean[] = [];
+    let pendingInjectedMessages: any[] = [];
     let pendingGetCellsCallbacks: ((response: { cells: Cell[] }) => void)[] = [];
     let snapshotCells: Partial<Cell>[] | null = null; // Persisted snapshot data (survives iframe destroy/recreate)
     let snapshotTimestamp: number | null = null;
 
-    function requestCells() {
+    function postToInjected(message: any) {
         if (injectedScriptReady) {
-            window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, COLAB_ORIGIN);
-        } else {
+            window.postMessage(message, COLAB_ORIGIN);
+            return;
+        }
+        pendingInjectedMessages.push(message);
+    }
+
+    function requestCells() {
+        if (!injectedScriptReady) {
             pendingCellRequests.push(true);
         }
+        postToInjected({ type: "PROMPTPACK_REQUEST_CELLS" });
     }
 
     function requestCellsWithActive() {
-        if (injectedScriptReady) {
-            window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS_WITH_ACTIVE" }, COLAB_ORIGIN);
-        } else {
-            // If not ready yet, fall back to regular cell request
+        if (!injectedScriptReady) {
             pendingCellRequests.push(true);
+        }
+        postToInjected({ type: "PROMPTPACK_REQUEST_CELLS_WITH_ACTIVE" });
+    }
+
+    function pingInjectedScript() {
+        try {
+            window.postMessage({ type: "PROMPTPACK_PING" }, COLAB_ORIGIN);
+        } catch (e) {
+            console.warn("PromptPack: Failed to ping injected script", e);
         }
     }
 
-    // Inject the Page Script
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('injected.js');
-    script.onload = function (this: any) { this.remove(); };
-    (document.head || document.documentElement).appendChild(script);
+    const INJECTED_SCRIPT_ID = "promptpack-injected-script";
+    function injectPageScript(forceReplace = false) {
+        let script = document.getElementById(INJECTED_SCRIPT_ID) as HTMLScriptElement | null;
+
+        if (forceReplace && script) {
+            script.remove();
+            script = null;
+        }
+
+        if (!script) {
+            const nextScript = document.createElement('script');
+            nextScript.id = INJECTED_SCRIPT_ID;
+            nextScript.src = chrome.runtime.getURL('injected.js') + `?v=${Date.now()}`;
+            nextScript.onload = () => {
+                setTimeout(() => pingInjectedScript(), 0);
+            };
+            (document.head || document.documentElement).appendChild(nextScript);
+            return;
+        }
+
+        // Script already present (e.g. extension hot-reload); request ready handshake.
+        pingInjectedScript();
+    }
+
+    injectPageScript(false);
+    setTimeout(() => {
+        if (!injectedScriptReady) {
+            // One forced reinjection if prior injected script instance is stale/broken.
+            injectPageScript(true);
+        }
+    }, 1200);
 
     // Hotkey State
     let quickCopyShortcut: Shortcut = { modifiers: ["Alt", "Shift"], key: "C" };
@@ -156,7 +200,18 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
         if (event.data.type === "PROMPTPACK_INJECTED_READY") {
             if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
             injectedScriptReady = true;
-            if (pendingCellRequests.length > 0) {
+            if (pendingInjectedMessages.length > 0) {
+                const queued = [...pendingInjectedMessages];
+                pendingInjectedMessages = [];
+                pendingCellRequests = [];
+                queued.forEach((message) => {
+                    try {
+                        window.postMessage(message, COLAB_ORIGIN);
+                    } catch (e) {
+                        console.warn("PromptPack content: failed forwarding queued message", e);
+                    }
+                });
+            } else if (pendingCellRequests.length > 0) {
                 pendingCellRequests = [];
                 window.postMessage({ type: "PROMPTPACK_REQUEST_CELLS" }, COLAB_ORIGIN);
             }
@@ -204,6 +259,38 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
                 }
                 pendingCopyBelow = false;
             }
+        } else if (event.data.type === "PROMPTPACK_APPLY_RESULT") {
+            if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+            if (overlayIframe && overlayIframe.contentWindow) {
+                overlayIframe.contentWindow.postMessage({
+                    type: "PROMPTPACK_APPLY_RESULT",
+                    requestId: event.data.requestId,
+                    payload: event.data.payload
+                }, "*");
+            }
+        } else if (event.data.type === "PROMPTPACK_EXECUTION_RESULT") {
+            if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+            if (overlayIframe && overlayIframe.contentWindow) {
+                overlayIframe.contentWindow.postMessage({
+                    type: "PROMPTPACK_EXECUTION_RESULT",
+                    requestId: event.data.requestId,
+                    payload: event.data.payload
+                }, "*");
+            }
+        } else if (event.data.type === "PROMPTPACK_NOTEBOOK_METADATA_RESULT") {
+            if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+            if (overlayIframe && overlayIframe.contentWindow) {
+                overlayIframe.contentWindow.postMessage({
+                    type: "PROMPTPACK_NOTEBOOK_METADATA_RESULT",
+                    requestId: event.data.requestId,
+                    payload: event.data.payload
+                }, "*");
+            }
+        } else if (event.data.type === 'PROMPTPACK_PANEL_MODE') {
+            if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+            if (!overlayIframe || event.source !== overlayIframe.contentWindow) return;
+            panelMode = event.data.mode === "agent" ? "agent" : "prompt";
+            updateOverlayLayout();
         } else if (event.data.type === 'CLOSE_PROMPTPACK') {
             if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
             if (overlayIframe && event.source !== overlayIframe.contentWindow) return;
@@ -309,6 +396,26 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
                     sendCellsToIframe(cachedCells.length > 0 ? cachedCells : []);
                 }
             }, 5000);
+        } else if (event.data.type === "PROMPTPACK_APPLY_CELL_UPDATES") {
+            if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+            postToInjected({
+                type: "PROMPTPACK_APPLY_CELL_UPDATES",
+                requestId: event.data.requestId,
+                payload: event.data.payload,
+            });
+        } else if (event.data.type === "PROMPTPACK_EXECUTE_CELLS") {
+            if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+            postToInjected({
+                type: "PROMPTPACK_EXECUTE_CELLS",
+                requestId: event.data.requestId,
+                payload: event.data.payload,
+            });
+        } else if (event.data.type === "PROMPTPACK_GET_NOTEBOOK_METADATA") {
+            if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
+            postToInjected({
+                type: "PROMPTPACK_GET_NOTEBOOK_METADATA",
+                requestId: event.data.requestId,
+            });
         }
     });
 
@@ -428,12 +535,17 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
     }
 
     function toggleOverlay() {
-        if (overlayContainer) closeOverlay();
+        if (overlayVisible) closeOverlay();
         else openOverlay();
     }
 
     function openOverlay() {
-        if (overlayContainer) return;
+        overlayVisible = true;
+        if (reopenButton) reopenButton.hidden = true;
+        if (overlayContainer) {
+            updateOverlayLayout();
+            return;
+        }
         overlayContainer = document.createElement('div');
         overlayContainer.id = "promptpack-overlay-container";
         Object.assign(overlayContainer.style, {
@@ -450,9 +562,42 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
         });
         overlayContainer.appendChild(overlayIframe);
         document.body.appendChild(overlayContainer);
+        updateOverlayLayout();
+    }
+
+    function updateOverlayLayout() {
+        if (!overlayContainer || !overlayIframe) return;
+        const docked = panelMode === "agent";
+        Object.assign(overlayContainer.style, {
+            display: overlayVisible ? "flex" : "none",
+            left: docked ? "auto" : "0",
+            right: "0",
+            width: docked ? "620px" : "100vw",
+            maxWidth: docked ? "100vw" : "none",
+            backgroundColor: docked ? "transparent" : "rgba(0, 0, 0, 0.5)",
+            backdropFilter: docked ? "none" : "blur(2px)",
+        });
+        Object.assign(overlayIframe.style, {
+            width: docked ? "100%" : "90%",
+            maxWidth: docked ? "none" : "1200px",
+            height: docked ? "100%" : "85%",
+            maxHeight: docked ? "none" : "900px",
+            borderRadius: docked ? "0" : "12px",
+        });
     }
 
     function closeOverlay() {
-        if (overlayContainer) { overlayContainer.remove(); overlayContainer = null; overlayIframe = null; }
+        // Keep the iframe and its socket alive while the user works in Colab.
+        overlayVisible = false;
+        updateOverlayLayout();
+        if (!reopenButton) {
+            reopenButton = document.createElement("button");
+            reopenButton.id = "promptpack-reopen";
+            reopenButton.textContent = "Open PromptPack";
+            reopenButton.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#0069c3;color:white;border:0;border-radius:24px;padding:12px 20px;font:600 14px sans-serif;cursor:pointer;box-shadow:0 4px 16px #0003";
+            reopenButton.onclick = openOverlay;
+            document.body.appendChild(reopenButton);
+        }
+        reopenButton.hidden = false;
     }
 }

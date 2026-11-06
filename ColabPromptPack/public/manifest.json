@@ -27,7 +27,11 @@
     "clipboardWrite"
   ],
   "host_permissions": [
-    "https://colab.research.google.com/*"
+    "https://colab.research.google.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "ws://127.0.0.1/*",
+    "ws://localhost/*"
   ],
   "content_scripts": [
     {

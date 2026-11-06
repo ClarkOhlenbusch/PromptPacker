@@ -1,0 +1,39 @@
+{
+  "name": "promptpack-bridge",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "description": "Local bridge service for PromptPack Colab agent terminal",
+  "main": "desktop/main.cjs",
+  "author": "PromptPack",
+  "homepage": "https://github.com/ClarkOhlenbusch/PromptPacker#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ClarkOhlenbusch/PromptPacker.git",
+    "directory": "promptpack-bridge"
+  },
+  "bugs": "https://github.com/ClarkOhlenbusch/PromptPacker/issues",
+  "desktopName": "promptpack-bridge.desktop",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "desktop": "electron .",
+    "desktop:smoke": "electron . --smoke-test",
+    "postinstall": "node scripts/prepare-native.cjs",
+    "pack": "node scripts/prepare-native.cjs && electron-builder --dir --publish never",
+    "dist": "node scripts/prepare-native.cjs && electron-builder --publish never"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0",
+    "ws": "8.22.1"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

@@ -1,0 +1,5 @@
+node_modules
+release/
+
+__pycache__/
+*.py[cod]

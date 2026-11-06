@@ -1,0 +1,61 @@
+appId: com.promptpack.bridge
+productName: PromptPack Bridge
+directories:
+  output: release
+  buildResources: desktop/assets
+files:
+  - src/**
+  - desktop/**
+  - package.json
+  - LICENSE
+asarUnpack:
+  - node_modules/node-pty/**
+afterPack: scripts/after-pack.cjs
+protocols:
+  - name: PromptPack Bridge
+    schemes:
+      - promptpack-bridge
+mac:
+  files:
+    - '!node_modules/node-pty/build/**'
+  x64ArchFiles: '**/node_modules/node-pty/prebuilds/**'
+  category: public.app-category.developer-tools
+  icon: desktop/assets/icon.icns
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  entitlements: desktop/entitlements.mac.plist
+  entitlementsInherit: desktop/entitlements.mac.plist
+  notarize: true
+  artifactName: PromptPack-Bridge-${version}-mac-${arch}.${ext}
+dmg:
+  contents:
+    - x: 130
+      y: 170
+    - x: 410
+      y: 170
+      type: link
+      path: /Applications
+win:
+  icon: desktop/assets/icon.ico
+  target: nsis
+  artifactName: PromptPack-Bridge-${version}-windows-${arch}-Setup.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  shortcutName: PromptPack Bridge
+linux:
+  maintainer: PromptPack contributors
+  syncDesktopName: true
+  icon: desktop/assets/icon.png
+  target:
+    - AppImage
+    - deb
+  category: Development
+  desktop:
+    entry:
+      Comment: Connect your coding agent to Google Colab
+  artifactName: PromptPack-Bridge-${version}-linux-${arch}.${ext}

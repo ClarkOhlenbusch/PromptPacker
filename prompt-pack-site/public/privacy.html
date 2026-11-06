@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy | PromptPack Colab</title>
+  <style>
+    body { margin: 0; background: #f6f9fc; color: #243446; font: 16px/1.7 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 40px auto; padding: 36px; background: white; border: 1px solid #dce7f0; border-radius: 16px; }
+    h1, h2 { line-height: 1.25; } h1 { font-size: 2.2rem; } h2 { margin-top: 2rem; font-size: 1.25rem; }
+    a { color: #0069c3; } @media(max-width: 600px) { main { margin: 0; padding: 24px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <p><a href="/">← PromptPacker</a></p>
+  <h1>PromptPack Colab privacy policy</h1>
+  <p>Last updated: November 6, 2026</p>
+  <p>This policy describes how the PromptPack Colab browser extension and its optional PromptPack Bridge companion handle information when you use them with Google Colab.</p>
+  <h2>Notebook content and prompts</h2>
+  <p>PromptPack reads cells and, when you choose features that include them, outputs from your open Colab notebook. It uses them to show notebook content, prepare prompts, copy content to your clipboard, and track changes. Content you choose to copy is placed on your device’s clipboard. If you paste it into another product, that product handles it under its own terms and privacy policy.</p>
+  <h2>Agent Terminal and Bridge</h2>
+  <p>When you start an Agent Terminal session, the extension sends notebook cell content to PromptPack Bridge on your computer through a local connection. Bridge creates a temporary workspace containing cell files and related session metadata. The coding agent you select can read and modify these files, and its saved changes can be synchronized to the open notebook. Text you type into the terminal and the agent’s terminal output also pass through the local connection. Avoid entering secrets unless you intend to provide them to your selected agent or command.</p>
+  <p>Your coding agent is a separate product. It may send notebook content, prompts, terminal input, or other information to its provider or other services according to its configuration and privacy policy. Google Colab processes the notebook and runs code in accordance with Google’s terms and settings. Review those services’ policies and your agent’s permissions before using them with sensitive data.</p>
+  <h2>Storage and retention</h2>
+  <p>The extension stores settings, such as keyboard shortcuts and copy options, in Chrome’s local extension storage. It keeps a session identifier in browser session storage to reconnect a terminal. Bridge keeps temporary workspace files and session output locally while a session is active, and attempts to remove the workspace when the session ends. If the app or computer stops unexpectedly, temporary files may remain in the operating system’s temporary directory until removed.</p>
+  <h2>Other connections and sharing</h2>
+  <p>The extension requests public GitHub release information to locate Bridge downloads; GitHub receives the usual network information associated with that request. The extension’s browser integration is limited to Google Colab and its connection to Bridge on localhost. PromptPacker does not sell user data or use it for advertising, creditworthiness, or lending. Information may be shared with the services you choose to use, as described above.</p>
+  <p>Our use of information received from Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
+  <h2>Your choices and contact</h2>
+  <p>You can choose what notebook content to copy, whether to start an agent session, and which agent to use. Stop the session or quit Bridge when finished. You can remove extension settings by uninstalling the extension or clearing its stored data in Chrome. For questions or requests, contact the project through <a href="https://github.com/ClarkOhlenbusch/PromptPacker/issues">GitHub Issues</a>; do not post sensitive notebook content or credentials in a public issue.</p>
+</main></body>
+</html>

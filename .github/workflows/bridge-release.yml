@@ -142,7 +142,22 @@ jobs:
           pattern: bridge-*
           merge-multiple: true
           path: installers
+      - name: Check whether this release is already public
+        id: release-state
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({
+                ...context.repo, tag: context.ref.replace('refs/tags/', '')
+              });
+              core.setOutput('published', String(!data.draft));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.setOutput('published', 'false');
+            }
       - uses: softprops/action-gh-release@v2
+        if: steps.release-state.outputs.published != 'true'
         with:
           tag_name: ${{ github.ref_name }}
           name: PromptPack Bridge ${{ github.ref_name }}

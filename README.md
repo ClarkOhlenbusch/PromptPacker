@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="#agent-terminal-for-google-colab">Colab Agent</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-why-promptpacker">Why?</a> •
   <a href="#-features">Features</a> •
@@ -26,18 +27,34 @@
 
 ---
 
+## Agent Terminal for Google Colab
+
+Work with a coding agent inside your Colab notebook. PromptPack opens a terminal in Colab and connects it to an agent running on your computer through **PromptPack Bridge**. You can ask the agent to edit existing cells, add cells, move or delete them, and request a run. Saved edits sync to your notebook; your agent’s normal approval settings apply.
+
+### What you need
+
+- A Chrome browser, an editable Colab notebook, and the [PromptPack Colab extension preview](https://github.com/ClarkOhlenbusch/PromptPacker/raw/refs/heads/main/PromptPackerColab-chrome.zip). The [Chrome Web Store listing](https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll) is available for the published extension; use the preview build for the latest Agent Terminal changes.
+- **PromptPack Bridge**, a small companion app that runs on your computer. [Find Bridge downloads](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true). **There is currently no public Bridge installer release.** See the [Bridge guide](promptpack-bridge/README.md) to build a development preview.
+- An installed and signed-in coding agent, such as Codex or Claude Code. Bridge offers links to their setup instructions. Custom command-line agents can also be configured.
+
+### Start a session
+
+1. Unzip the extension preview. In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select the unzipped folder containing `manifest.json`.
+2. Install and open PromptPack Bridge. Leave it running until it says **Ready for Colab**.
+3. Open an editable notebook in [Google Colab](https://colab.research.google.com/), open PromptPack, and select **Agent Terminal**.
+4. Choose your agent, click **Start session**, and sign in if the agent asks. Describe what you want in the terminal.
+
+Bridge connects locally to the extension and keeps a temporary copy of the notebook cells for your agent. Colab and your coding agent operate under their own accounts, permissions, and service settings. Execution may require a connected Colab runtime; a queued run does not by itself confirm that code completed. Cell type conversion is not currently supported.
+
+The [Bridge guide](promptpack-bridge/README.md) has platform setup and troubleshooting details. The regular prompt-packing features do not require Bridge.
+
+---
+
 ## 🚀 Quick Start
 
-### macOS (Apple Silicon)
-```bash
-curl -L https://github.com/ClarkOhlenbusch/PromptPacker/releases/latest/download/prompt-pack-lite_aarch64.dmg -o PromptPacker.dmg
-open PromptPacker.dmg
-```
+### PromptPack Lite desktop
 
-### Other Platforms
-Download the latest release for your OS from [GitHub Releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases).
-
-**Or visit [prompt-packer-one.vercel.app](https://prompt-packer-one.vercel.app/)** for auto-detected downloads.
+Download the desktop app for your computer from [GitHub Releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases) or visit [prompt-packer-one.vercel.app](https://prompt-packer-one.vercel.app/) for download options. PromptPack Lite and PromptPack Bridge are separate apps.
 
 ---
 
@@ -89,7 +106,9 @@ Bring PromptPacker into your Google Colab workflow.
 
 | Feature | Description |
 |---------|-------------|
-| **DOM Scraping Adapter** | Treats Colab cells as "files" |
+| **Agent Terminal** | Connect a local coding agent to your open notebook through Bridge |
+| **Notebook Editing** | Sync cell edits and add, move, or delete cells |
+| **Notebook Context** | Treats Colab cells as files for prompt packing |
 | **Diff Tracking** | See what changed since your last snapshot |
 | **Visual Diffs** | Side-by-side before packing |
 | **Quick Copy** | Global hotkeys to grab entire notebook context |

@@ -8,7 +8,7 @@
 
 **Turn your Google Colab notebooks into AI-ready prompts with intelligent compression, diff tracking, and one-click copying.**
 
-[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/placeholder?style=flat-square&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chrome.google.com/webstore)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/piniclchmidgfainpldphnocipgilmll?style=flat-square&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -68,16 +68,22 @@
 
 ### From Chrome Web Store (Recommended)
 
-1. Visit the [Chrome Web Store listing](https://chrome.google.com/webstore) (link coming soon)
+1. Visit the [PromptPack Colab Chrome Web Store listing](https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll)
 2. Click **"Add to Chrome"**
 3. Navigate to [Google Colab](https://colab.research.google.com)
 4. Click the PromptPack icon in your toolbar (or press `Alt+Shift+C`)
+
+### Agent Terminal preview
+
+The Agent Terminal work is available in the [extension development build](https://github.com/ClarkOhlenbusch/PromptPacker/raw/refs/heads/main/PromptPackerColab-chrome.zip). Unzip it, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`. Use this build for the latest notebook agent features.
+
+Agent Terminal also needs PromptPack Bridge and an installed, signed-in coding agent. **No Bridge installer release is published yet**; see the [Bridge setup guide](../promptpack-bridge/README.md) for the development build. Once Bridge is running, open an editable Colab notebook, open PromptPack, select **Agent Terminal**, and start your agent. Changes saved by the agent sync into the notebook; the agent's usual approvals apply.
 
 ### Manual Installation (Developer Mode)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/clarking/PromptPacker.git
+git clone https://github.com/ClarkOhlenbusch/PromptPacker.git
 cd PromptPacker/ColabPromptPack
 
 # 2. Install dependencies

@@ -76,7 +76,18 @@ jobs:
         if: runner.os == 'Linux'
         run: timeout 120s xvfb-run -a npm run desktop:smoke -- --no-sandbox
       - name: Build installers
-        run: npm run dist -- ${{ matrix.args }}
+        run: |
+          if [[ -z "$CSC_LINK" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            if [[ "${{ runner.os }}" == "macOS" ]]; then
+              npm run dist -- ${{ matrix.args }} -c.mac.notarize=false
+            else
+              npm run dist -- ${{ matrix.args }}
+            fi
+          else
+            npm run dist -- ${{ matrix.args }}
+          fi
       - name: Smoke-test packaged macOS app
         if: startsWith(matrix.name, 'mac')
         run: '"release/mac-universal/PromptPack Bridge.app/Contents/MacOS/PromptPack Bridge" --smoke-test'

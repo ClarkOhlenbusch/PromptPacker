@@ -10,32 +10,38 @@ import {
    CheckCircle2,
    Github,
    Star,
-   Chrome
+   Chrome,
+   Terminal,
+   ArrowRight,
+   NotebookPen
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 
-// Fallback if API fails
-const FALLBACK_VERSION = "v0.1.0";
 const REPO_OWNER = "ClarkOhlenbusch";
 const REPO_NAME = "PromptPacker";
+const BRIDGE_RELEASES = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases?q=bridge-v&expanded=true`;
+const COLAB_SETUP = `https://github.com/${REPO_OWNER}/${REPO_NAME}#agent-terminal-for-google-colab`;
+const COLAB_PREVIEW = `https://github.com/${REPO_OWNER}/${REPO_NAME}/raw/refs/heads/main/PromptPackerColab-chrome.zip`;
+type BridgeRelease = { tag_name: string; draft: boolean; prerelease: boolean; html_url: string; assets: { name: string; browser_download_url: string }[] };
+type BridgeStatus = { state: "loading" | "available" | "unavailable" | "error"; release?: BridgeRelease };
 
 export default function App() {
    const [scrolled, setScrolled] = useState(false);
-   const [latestVersion, setLatestVersion] = useState(FALLBACK_VERSION);
+   const [latestVersion, setLatestVersion] = useState<string | null>(null);
    const [downloadUrl, setDownloadUrl] = useState("");
-   const [osName, setOsName] = useState("Mac");
+   const [osName] = useState(() => {
+      const userAgent = window.navigator.userAgent;
+      if (userAgent.includes("Win")) return "Windows";
+      if (userAgent.includes("Linux") && !userAgent.includes("Android")) return "Linux";
+      return "Mac";
+   });
    const [starCount, setStarCount] = useState<number | null>(null);
+   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>({ state: "loading" });
 
    useEffect(() => {
       const handleScroll = () => setScrolled(window.scrollY > 20);
       window.addEventListener("scroll", handleScroll);
-
-      let detectedOS = "Mac";
-      const userAgent = window.navigator.userAgent;
-      if (userAgent.indexOf("Win") !== -1) detectedOS = "Windows";
-      else if (userAgent.indexOf("Linux") !== -1 && userAgent.indexOf("Android") === -1) detectedOS = "Linux";
-      setOsName(detectedOS);
 
       fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`)
          .then(res => res.json())
@@ -44,19 +50,30 @@ export default function App() {
                setLatestVersion(data.tag_name);
                let asset = null;
                if (data.assets && data.assets.length > 0) {
-                  if (detectedOS === "Windows") {
-                     asset = data.assets.find((a: any) => a.name.endsWith(".exe"));
-                  } else if (detectedOS === "Linux") {
-                     asset = data.assets.find((a: any) => a.name.endsWith(".AppImage"));
+                  if (osName === "Windows") {
+                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".exe"));
+                  } else if (osName === "Linux") {
+                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".AppImage"));
                   } else {
-                     asset = data.assets.find((a: any) => a.name.includes("aarch64") && a.name.endsWith(".dmg"))
-                        || data.assets.find((a: any) => a.name.endsWith(".dmg"));
+                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.includes("aarch64") && a.name.endsWith(".dmg"))
+                        || data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".dmg"));
                   }
                }
                if (asset) setDownloadUrl(asset.browser_download_url);
             }
          })
          .catch(err => console.error("Failed to fetch latest version", err));
+
+      fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100`)
+         .then(res => {
+            if (!res.ok) throw new Error("Unable to check Bridge releases");
+            return res.json() as Promise<BridgeRelease[]>;
+         })
+         .then(releases => {
+            const release = releases.find(item => item.tag_name.startsWith("bridge-v") && !item.draft && !item.prerelease && item.assets?.some(asset => /\.(dmg|exe|AppImage|deb)$/i.test(asset.name)));
+            setBridgeStatus(release ? { state: "available", release } : { state: "unavailable" });
+         })
+         .catch(() => setBridgeStatus({ state: "error" }));
 
       const fetchStarCount = () => {
          fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`)
@@ -76,15 +93,9 @@ export default function App() {
          window.removeEventListener("scroll", handleScroll);
          window.clearInterval(starInterval);
       };
-   }, []);
+   }, [osName]);
 
-   const getFallbackUrl = () => {
-      if (osName === "Windows") return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_x64-setup.exe`;
-      if (osName === "Linux") return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_amd64.AppImage`;
-      return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latestVersion}/prompt-pack-lite_${latestVersion}_aarch64.dmg`;
-   };
-
-   const currentDownloadLink = downloadUrl || getFallbackUrl();
+   const currentDownloadLink = downloadUrl || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`;
    const formattedStars = starCount === null ? "..." : starCount.toLocaleString();
 
    const containerVariants: Variants = {
@@ -133,6 +144,7 @@ export default function App() {
                   </span>
                </motion.div>
                <div className="flex items-center gap-8">
+                  <a href="#colab-agent" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Colab Agent</a>
                   <a href="#features" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Features</a>
                   <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="hidden md:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
                      <Github size={16} /> GitHub
@@ -170,7 +182,7 @@ export default function App() {
                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#0069C3]"></span>
                   </span>
-                  V{latestVersion.replace('v', '')} NOW AVAILABLE
+                  {latestVersion ? `DESKTOP ${latestVersion.toUpperCase()}` : 'DESKTOP AND COLAB TOOLS'}
                </motion.div>
 
                <motion.h1 variants={itemVariants} className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[0.95] text-[#2A3947]">
@@ -181,7 +193,7 @@ export default function App() {
                </motion.h1>
 
                <motion.p variants={itemVariants} className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed font-light">
-                  The essential tool for "Context Engineering." Automatically clean, filter, and format your codebase into the perfect prompt for LLMs.
+                  Turn your project into useful AI context, or work with a coding agent directly inside Google Colab.
                </motion.p>
 
                <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
@@ -190,7 +202,7 @@ export default function App() {
                      className="px-10 py-5 bg-[#2A3947] text-white rounded-xl font-bold text-lg shadow-2xl shadow-slate-900/20 hover:bg-[#1e293b] transition-all flex items-center gap-3 w-full sm:w-auto justify-center group"
                   >
                      <Download size={24} />
-                     <span>Download for {osName}</span>
+                     <span>{downloadUrl ? `Download Desktop for ${osName}` : "Desktop downloads"}</span>
                      <ChevronRight size={20} className="opacity-50 group-hover:translate-x-1 transition-transform" />
                   </a>
                   <a
@@ -205,6 +217,9 @@ export default function App() {
                   </a>
                </motion.div>
 
+               <motion.a variants={itemVariants} href="#colab-agent" className="inline-flex items-center gap-2 text-[#0069C3] font-semibold hover:underline">
+                  Explore Agent Terminal for Colab <ArrowRight size={17} />
+               </motion.a>
                <motion.div variants={itemVariants} className="pt-12">
                   <div className="relative mx-auto max-w-5xl bg-white rounded-xl overflow-hidden border border-slate-200 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)]">
                      {/* Window Header */}
@@ -259,6 +274,53 @@ export default function App() {
                </motion.div>
             </div>
          </motion.header>
+
+         <section id="colab-agent" className="relative z-10 scroll-mt-24 border-y border-blue-100 bg-[#f4f9fd] px-6 py-24 md:py-32">
+            <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-2 lg:items-center">
+               <div className="space-y-7">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#0069C3]">
+                     <Terminal size={15} /> Agent Terminal for Colab
+                  </div>
+                  <h2 className="font-display text-4xl font-bold tracking-tight text-[#2A3947] md:text-5xl">Your coding agent, right in your notebook.</h2>
+                  <p className="text-lg leading-relaxed text-slate-600">Use Codex, Claude Code, or another installed command-line agent from PromptPack. Ask it to edit, add, move, or delete cells, and see changes sync into your open notebook.</p>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                     {[
+                        ["1", "Get the extension", "Install the current development build for Agent Terminal."],
+                        ["2", "Open Bridge", "Run the companion app on your computer."],
+                        ["3", "Start your agent", "Open Colab, choose Agent Terminal, and start a session."],
+                     ].map(([number, title, detail]) => (
+                        <div key={number} className="rounded-xl border border-blue-100 bg-white p-4">
+                           <span className="font-mono text-xs font-bold text-[#0069C3]">{number.padStart(2, "0")}</span>
+                           <h3 className="mt-2 font-bold text-[#2A3947]">{title}</h3>
+                           <p className="mt-1 text-sm leading-relaxed text-slate-500">{detail}</p>
+                        </div>
+                     ))}
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                     {bridgeStatus.state === "available" ? (
+                        <a href={bridgeStatus.release!.html_url} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700"><Download size={18} /> Download Bridge</a>
+                     ) : (
+                        <a href={COLAB_SETUP} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700">Bridge setup guide <ArrowRight size={18} /></a>
+                     )}
+                     <a href={COLAB_PREVIEW} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 font-bold text-[#2A3947] hover:bg-slate-50"><Chrome size={18} /> Download extension preview</a>
+                  </div>
+                  <p role="status" className="text-sm leading-relaxed text-slate-500">
+                     {bridgeStatus.state === "loading" && "Checking Bridge downloads…"}
+                     {bridgeStatus.state === "unavailable" && <>Bridge installers are not published yet. See the <a className="underline" href={COLAB_SETUP}>setup guide</a> for the current preview.</>}
+                     {bridgeStatus.state === "error" && <>We couldn’t check Bridge downloads. See <a className="underline" href={BRIDGE_RELEASES}>Bridge releases</a> and the <a className="underline" href={COLAB_SETUP}>setup guide</a>.</>}
+                     {bridgeStatus.state === "available" && <>Choose your operating system on the release page. Bridge runs locally; your coding agent is installed and signed in separately.</>}
+                  </p>
+               </div>
+               <div className="overflow-hidden rounded-2xl border border-slate-700 bg-[#182635] shadow-2xl shadow-slate-900/20">
+                  <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4 text-sm font-semibold text-slate-200"><NotebookPen size={17} className="text-sky-300" /> Colab <span className="text-slate-500">/</span> Agent Terminal</div>
+                  <div className="space-y-5 p-6 font-mono text-sm leading-relaxed md:p-8">
+                     <p className="text-slate-300"><span className="text-sky-300">You</span> &nbsp;Add a plot of the model predictions after the evaluation cell.</p>
+                     <p className="text-slate-300"><span className="text-emerald-300">Agent</span> &nbsp;I’ll add a code cell after evaluation and label the axes.</p>
+                     <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-slate-400">Saved changes sync to your open notebook.<br />Your agent’s normal approvals still apply.</div>
+                  </div>
+               </div>
+            </div>
+         </section>
 
          {/* SOTA Compression Feature Section */}
          <section className="py-32 px-6 relative z-10 border-t border-slate-100 bg-slate-50/50">
@@ -375,9 +437,9 @@ export default function App() {
                   <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-50 border border-green-100 text-green-700 text-xs font-bold uppercase tracking-widest">
                      <ShieldCheck size={14} /> Local First
                   </div>
-                  <h2 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[#2A3947]">Your code never leaves localhost.</h2>
+                  <h2 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[#2A3947]">Local tools, connected to your workflow.</h2>
                   <p className="text-lg text-slate-500 leading-relaxed max-w-2xl mx-auto">
-                     PromptPacker is open source and remains a local-first application. We don't have servers. We don't track usage. Everything happens entirely on your machine.
+                     PromptPack Bridge runs on your computer and connects to the Colab page in your browser. Your chosen coding agent and Google Colab may send data to their own services under their respective settings.
                   </p>
                </div>
             </div>

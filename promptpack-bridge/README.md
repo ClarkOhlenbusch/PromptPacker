@@ -4,12 +4,12 @@ The companion app that connects PromptPack's Agent Terminal to a coding agent on
 
 ## Install and use
 
-1. Download **PromptPack Bridge** from the [Bridge releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true).
+1. Check [Bridge releases](https://github.com/ClarkOhlenbusch/PromptPacker/releases?q=bridge-v&expanded=true) for an installer. **No public Bridge installer has been published yet.** Until one is available, use the development instructions below to build a preview.
 2. Install and open it:
    - **Mac:** open the universal `.dmg`, drag PromptPack Bridge to Applications, then open it. The same download supports Apple silicon and Intel Macs.
    - **Windows:** open `Setup.exe`. It installs for your user account and opens Bridge when finished. Use x64 for most PCs; an arm64 build is available for Windows on ARM.
    - **Linux:** install the `.deb` on Debian/Ubuntu, or download the `.AppImage`. For an AppImage, allow it to run as a program in your file manager's Properties/Permissions, then open it. Use arm64 on ARM computers and x64 on Intel/AMD computers.
-3. When the app says **Ready for Colab**, return to your notebook, open PromptPack, and click **Start session**.
+3. When the app says **Ready for Colab**, open an editable Colab notebook, open PromptPack, select **Agent Terminal**, and click **Start session**. The current Agent Terminal requires the [extension preview](https://github.com/ClarkOhlenbusch/PromptPacker/raw/refs/heads/main/PromptPackerColab-chrome.zip); unzip it and load the folder containing `manifest.json` through Chrome's `chrome://extensions` page with Developer mode enabled.
 
 Bridge includes its own runtime and native terminal support. **You do not need to install Node.js, Python, or run commands to start Bridge.**
 

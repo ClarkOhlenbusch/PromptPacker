@@ -86,6 +86,14 @@ fn extract_c_skeleton(output: &mut String, node: Node, source: &[u8], depth: usi
             extract_declaration(output, node, source, &indent);
         }
 
+        // Typedefs - keep the `typedef` keyword, summarize any struct/union/enum body
+        "type_definition" => {
+            let summary = summarize_typedef(node, source);
+            output.push_str(&indent);
+            output.push_str(&truncate_line(&summary, MAX_DEF_LINE_LEN));
+            output.push('\n');
+        }
+
         // Standalone struct/union/enum (rare, usually in declarations)
         "struct_specifier" | "union_specifier" | "enum_specifier" => {
             output.push_str(&indent);
@@ -300,12 +308,14 @@ fn summarize_typedef(node: Node, source: &[u8]) -> String {
             "struct_specifier" | "union_specifier" | "enum_specifier" => {
                 let type_summary = summarize_composite_type(child, source);
                 
-                // Find the typedef name (last identifier before semicolon)
-                let lines: Vec<&str> = text.lines().collect();
-                if let Some(last) = lines.last() {
-                    let name = last.trim().trim_end_matches(';').trim_end_matches('}').trim();
-                    if !name.is_empty() && !name.contains('{') {
-                        return format!("typedef {} {};", type_summary, name);
+                // Find the typedef name: the type_identifier that follows the body
+                let mut name_cursor = node.walk();
+                for sibling in node.children(&mut name_cursor) {
+                    if sibling.kind() == "type_identifier" {
+                        let name = get_node_text(sibling, source).trim();
+                        if !name.is_empty() {
+                            return format!("typedef {} {};", type_summary, name);
+                        }
                     }
                 }
                 return format!("typedef {};", type_summary);

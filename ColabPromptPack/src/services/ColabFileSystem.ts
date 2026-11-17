@@ -98,6 +98,10 @@ async function requestCellsFromContentScript(): Promise<CellsResponse | null> {
   );
 }
 
+export async function requestNotebookExport(): Promise<{ notebook?: any; title?: string; error?: string } | null> {
+  return sendParentCommand("PROMPTPACK_EXPORT_NOTEBOOK", "PROMPTPACK_EXPORT_NOTEBOOK_RESULT", undefined, 30000);
+}
+
 /**
  * Send a snapshot command to the content script and wait for acknowledgement.
  */

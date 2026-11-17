@@ -829,6 +829,16 @@ function getNotebookMetadata(): NotebookMetadata {
 
     if (event.data.type === "PROMPTPACK_PING") {
       window.postMessage({ type: "PROMPTPACK_INJECTED_READY" }, COLAB_ORIGIN);
+    } else if (event.data.type === "PROMPTPACK_EXPORT_NOTEBOOK") {
+      void (async () => {
+        try {
+          const notebook = await getNotebookModel()?.getIpynbJson?.();
+          if (!notebook || !Array.isArray(notebook.cells) || !notebook.nbformat) throw new Error("Colab did not provide the complete notebook. Try Colab's File > Download menu.");
+          window.postMessage({ type: "PROMPTPACK_EXPORT_NOTEBOOK_RESULT", requestId, payload: { notebook: JSON.parse(JSON.stringify(notebook)), title: getNotebookMetadata().title } }, COLAB_ORIGIN);
+        } catch (error: any) {
+          window.postMessage({ type: "PROMPTPACK_EXPORT_NOTEBOOK_RESULT", requestId, payload: { error: error?.message || "Could not read notebook data." } }, COLAB_ORIGIN);
+        }
+      })();
     } else if (event.data.type === "PROMPTPACK_REQUEST_CELLS") {
       try {
         const cells = extractCellsFromMemory();

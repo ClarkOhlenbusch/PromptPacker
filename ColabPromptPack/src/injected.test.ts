@@ -199,3 +199,18 @@ describe("execution and output inspection", () => {
     expect(result.status).toBe("queued");
   });
 });
+
+describe("native notebook export", () => {
+  it("preserves the complete native notebook including output MIME data and metadata", async () => {
+    const notebook = { nbformat: 4, nbformat_minor: 5, metadata: { widgets: { state: "keep" } }, cells: [{ cell_type: "code", source: ["df.head()"], metadata: { id: "native" }, execution_count: 7, outputs: [{ output_type: "execute_result", data: { "text/html": "<table></table>", "text/plain": "table" }, metadata: { custom: "keep" } }] }] };
+    window.colab.global.notebookModel.getIpynbJson = vi.fn(async () => notebook);
+    const sent = vi.spyOn(window, "postMessage");
+    sent.mockClear();
+    window.dispatchEvent(new MessageEvent("message", { origin: "https://colab.research.google.com", source: window, data: { type: "PROMPTPACK_EXPORT_NOTEBOOK", requestId: "export" } }));
+    await waitFor(() => expect(sent.mock.calls.some(([message]) => message.type === "PROMPTPACK_EXPORT_NOTEBOOK_RESULT")).toBe(true));
+    const result = sent.mock.calls.find(([message]) => message.type === "PROMPTPACK_EXPORT_NOTEBOOK_RESULT")![0];
+    expect(result.payload.notebook).toEqual(notebook);
+    expect(result.payload.notebook).not.toBe(notebook);
+    expect(result.requestId).toBe("export");
+  });
+});

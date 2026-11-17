@@ -279,6 +279,9 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
                     payload: event.data.payload
                 }, "*");
             }
+        } else if (event.data.type === "PROMPTPACK_EXPORT_NOTEBOOK_RESULT") {
+            if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
+            overlayIframe?.contentWindow?.postMessage({ type: event.data.type, requestId: event.data.requestId, payload: event.data.payload }, "*");
         } else if (event.data.type === "PROMPTPACK_NOTEBOOK_METADATA_RESULT") {
             if (event.source !== window || event.origin !== COLAB_ORIGIN) return;
             if (overlayIframe && overlayIframe.contentWindow) {
@@ -412,6 +415,9 @@ if (window.hasRunPromptPack && isExtensionContextValid()) {
                 requestId: event.data.requestId,
                 payload: event.data.payload,
             });
+        } else if (event.data.type === "PROMPTPACK_EXPORT_NOTEBOOK") {
+            if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX) || event.source !== overlayIframe?.contentWindow) return;
+            postToInjected({ type: event.data.type, requestId: event.data.requestId });
         } else if (event.data.type === "PROMPTPACK_GET_NOTEBOOK_METADATA") {
             if (!event.origin.startsWith(EXTENSION_ORIGIN_PREFIX)) return;
             postToInjected({

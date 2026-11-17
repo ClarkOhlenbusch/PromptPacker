@@ -1,486 +1,775 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-   Download,
-   FileCode,
-   Cpu,
-   ShieldCheck,
-   ChevronRight,
-   Zap,
-   Layers,
-   CheckCircle2,
-   Github,
-   Star,
-   Chrome,
-   Terminal,
-   ArrowRight,
-   NotebookPen
+  ArrowUpRight,
+  Check,
+  Chrome,
+  Download,
+  Github,
+  Play,
+  Star,
+  Terminal,
 } from "lucide-react";
-import { motion } from "framer-motion";
-import type { Variants } from "framer-motion";
 
 const REPO_OWNER = "ClarkOhlenbusch";
 const REPO_NAME = "PromptPacker";
 const BRIDGE_RELEASES = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases?q=bridge-v&expanded=true`;
 const COLAB_SETUP = `https://github.com/${REPO_OWNER}/${REPO_NAME}#agent-terminal-for-google-colab`;
 const COLAB_PREVIEW = `https://github.com/${REPO_OWNER}/${REPO_NAME}/raw/refs/heads/main/PromptPackerColab-chrome.zip`;
-type BridgeRelease = { tag_name: string; draft: boolean; prerelease: boolean; html_url: string; assets: { name: string; browser_download_url: string }[] };
-type BridgeStatus = { state: "loading" | "available" | "unavailable" | "error"; release?: BridgeRelease };
+const CHROME_STORE_URL =
+  "https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll?utm_source=item-share-cb";
+
+type BridgeRelease = {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  html_url: string;
+  assets: { name: string; browser_download_url: string }[];
+};
+
+type BridgeStatus = {
+  state: "loading" | "available" | "unavailable" | "error";
+  release?: BridgeRelease;
+};
+
+type HeroTab = "colab-full" | "colab-sync" | "desktop";
+type DesktopView = "clip" | "workspace" | "output";
+type ColabClipTab = "start" | "sync" | "diff";
 
 export default function App() {
-   const [scrolled, setScrolled] = useState(false);
-   const [latestVersion, setLatestVersion] = useState<string | null>(null);
-   const [downloadUrl, setDownloadUrl] = useState("");
-   const [osName] = useState(() => {
-      const userAgent = window.navigator.userAgent;
-      if (userAgent.includes("Win")) return "Windows";
-      if (userAgent.includes("Linux") && !userAgent.includes("Android")) return "Linux";
-      return "Mac";
-   });
-   const [starCount, setStarCount] = useState<number | null>(null);
-   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>({ state: "loading" });
+  const [downloadUrl, setDownloadUrl] = useState("");
+  const [osName] = useState(() => {
+    const ua = window.navigator.userAgent;
+    if (ua.includes("Win")) return "Windows";
+    if (ua.includes("Linux") && !ua.includes("Android")) return "Linux";
+    return "Mac";
+  });
+  const [starCount, setStarCount] = useState<number | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>({ state: "loading" });
 
-   useEffect(() => {
-      const handleScroll = () => setScrolled(window.scrollY > 20);
-      window.addEventListener("scroll", handleScroll);
+  const [heroTab, setHeroTab] = useState<HeroTab>("colab-sync");
+  const [colabClip, setColabClip] = useState<ColabClipTab>("sync");
+  const [desktopView, setDesktopView] = useState<DesktopView>("clip");
+  const fullVideoRef = useRef<HTMLVideoElement | null>(null);
 
-      fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`)
-         .then(res => res.json())
-         .then(data => {
-            if (data.tag_name) {
-               setLatestVersion(data.tag_name);
-               let asset = null;
-               if (data.assets && data.assets.length > 0) {
-                  if (osName === "Windows") {
-                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".exe"));
-                  } else if (osName === "Linux") {
-                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".AppImage"));
-                  } else {
-                     asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name.includes("aarch64") && a.name.endsWith(".dmg"))
-                        || data.assets.find((a: { name: string; browser_download_url: string }) => a.name.endsWith(".dmg"));
-                  }
-               }
-               if (asset) setDownloadUrl(asset.browser_download_url);
+  useEffect(() => {
+    fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.tag_name) {
+          let asset = null;
+          if (data.assets && data.assets.length > 0) {
+            if (osName === "Windows") {
+              asset = data.assets.find((a: { name: string }) => a.name.endsWith(".exe"));
+            } else if (osName === "Linux") {
+              asset = data.assets.find((a: { name: string }) => a.name.endsWith(".AppImage"));
+            } else {
+              asset =
+                data.assets.find(
+                  (a: { name: string }) => a.name.includes("aarch64") && a.name.endsWith(".dmg")
+                ) || data.assets.find((a: { name: string }) => a.name.endsWith(".dmg"));
             }
-         })
-         .catch(err => console.error("Failed to fetch latest version", err));
+          }
+          if (asset) setDownloadUrl(asset.browser_download_url);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch latest version", err));
 
-      fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100`)
-         .then(res => {
-            if (!res.ok) throw new Error("Unable to check Bridge releases");
-            return res.json() as Promise<BridgeRelease[]>;
-         })
-         .then(releases => {
-            const candidates = releases.filter(item => item.tag_name.startsWith("bridge-v") && !item.draft && item.assets?.some(asset => /\.(dmg|exe|AppImage|deb)$/i.test(asset.name)));
-            const release = candidates.find(item => !item.prerelease) || candidates[0];
-            setBridgeStatus(release ? { state: "available", release } : { state: "unavailable" });
-         })
-         .catch(() => setBridgeStatus({ state: "error" }));
+    fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Unable to check Bridge releases");
+        return res.json() as Promise<BridgeRelease[]>;
+      })
+      .then((releases) => {
+        const candidates = releases.filter(
+          (item) =>
+            item.tag_name.startsWith("bridge-v") &&
+            !item.draft &&
+            item.assets?.some((asset) => /\.(dmg|exe|AppImage|deb)$/i.test(asset.name))
+        );
+        const release = candidates.find((item) => !item.prerelease) || candidates[0];
+        setBridgeStatus(release ? { state: "available", release } : { state: "unavailable" });
+      })
+      .catch(() => setBridgeStatus({ state: "error" }));
 
-      const fetchStarCount = () => {
-         fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`)
-            .then(res => res.json())
-            .then(data => {
-               if (typeof data.stargazers_count === "number") {
-                  setStarCount(data.stargazers_count);
-               }
-            })
-            .catch(err => console.error("Failed to fetch GitHub stars", err));
-      };
+    const fetchStars = () => {
+      fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (typeof data.stargazers_count === "number") {
+            setStarCount(data.stargazers_count);
+          }
+        })
+        .catch((err) => console.error("Failed to fetch GitHub stars", err));
+    };
 
-      fetchStarCount();
-      const starInterval = window.setInterval(fetchStarCount, 5 * 60 * 1000);
+    fetchStars();
+    const interval = window.setInterval(fetchStars, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [osName]);
 
-      return () => {
-         window.removeEventListener("scroll", handleScroll);
-         window.clearInterval(starInterval);
-      };
-   }, [osName]);
+  const currentDownloadLink =
+    downloadUrl || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`;
 
-   const currentDownloadLink = downloadUrl || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`;
-   const formattedStars = starCount === null ? "..." : starCount.toLocaleString();
-
-   const containerVariants: Variants = {
-      hidden: { opacity: 0 },
-      visible: {
-         opacity: 1,
-         transition: {
-            staggerChildren: 0.1
-         }
+  const jumpToFullTimestamp = (seconds: number) => {
+    setHeroTab("colab-full");
+    window.setTimeout(() => {
+      if (fullVideoRef.current) {
+        fullVideoRef.current.currentTime = seconds;
+        void fullVideoRef.current.play().catch(() => {});
       }
-   };
+    }, 60);
+  };
 
-   const itemVariants: Variants = {
-      hidden: { y: 20, opacity: 0 },
-      visible: {
-         y: 0,
-         opacity: 1,
-         transition: {
-            duration: 0.8,
-            ease: [0.16, 1, 0.3, 1]
-         }
-      }
-   };
+  return (
+    <div className="min-h-screen bg-white text-[#1B2836] font-sans selection:bg-[#0066C0]/15 selection:text-[#0066C0]">
+      {/* Navigation */}
+      <header className="sticky top-0 z-50 border-b border-[#E3E8EE] bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <a href="#" className="flex items-center gap-2.5">
+            <img
+              src="/logo-mark.png"
+              alt="PromptPacker mark"
+              className="h-8 w-8 object-contain"
+            />
+            <span className="font-display text-lg font-semibold tracking-tight text-[#1B2836]">
+              PromptPacker
+            </span>
+          </a>
 
-   return (
-      <div className="min-h-screen bg-white text-[#2A3947] font-sans selection:bg-[#0069C3]/10 selection:text-[#0069C3] overflow-x-hidden">
+          <nav className="hidden items-center gap-8 text-sm font-medium text-[#526273] md:flex">
+            <a href="#colab-agent" className="hover:text-[#1B2836] transition-colors">
+              Colab Agent
+            </a>
+            <a href="#desktop" className="hover:text-[#1B2836] transition-colors">
+              Desktop App
+            </a>
+            <a href="#architecture" className="hover:text-[#1B2836] transition-colors">
+              How it works
+            </a>
+            <a
+              href={`https://github.com/${REPO_OWNER}/${REPO_NAME}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 hover:text-[#1B2836] transition-colors"
+            >
+              <Github size={15} />
+              <span>GitHub</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                <Star size={11} className="fill-amber-400 text-amber-500" />
+                <span>{starCount === null ? "..." : starCount.toLocaleString()}</span>
+              </span>
+            </a>
+          </nav>
 
-         {/* Tech Background Grid */}
-         <div className="fixed inset-0 pointer-events-none z-0">
-            <div className="absolute inset-0 tech-grid opacity-40" />
-            <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#0069C3]/5 blur-[120px] rounded-full" />
-            <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#0069C3]/5 blur-[100px] rounded-full" />
-         </div>
+          <div className="flex items-center gap-3">
+            <a
+              href={CHROME_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-1.5 rounded-lg border border-[#D5DDE6] px-3.5 py-2 text-sm font-medium text-[#1B2836] hover:bg-[#F7F9FB] transition-colors sm:inline-flex"
+            >
+              <Chrome size={15} />
+              <span>Extension</span>
+            </a>
+            <a
+              href={currentDownloadLink}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-4 py-2 text-sm font-medium text-white hover:bg-[#00529B] transition-colors"
+            >
+              <Download size={15} />
+              <span>Download</span>
+            </a>
+          </div>
+        </div>
+      </header>
 
-         {/* Navbar */}
-         <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? 'glass py-3' : 'bg-transparent py-6'}`}>
-            <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-               <motion.div
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  className="flex items-center gap-3"
-               >
-                  <img src="/logo.png" alt="Logo" className="h-9 w-auto rounded shadow-sm" />
-                  <span className="font-display font-bold text-xl tracking-tight text-[#2A3947]">
-                     Prompt<span className="text-[#0069C3]">Packer</span>
-                  </span>
-               </motion.div>
-               <div className="flex items-center gap-8">
-                  <a href="#colab-agent" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Colab Agent</a>
-                  <a href="#features" className="hidden md:block text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors">Features</a>
-                  <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="hidden md:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
-                     <Github size={16} /> GitHub
-                     <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                        <Star size={12} className="text-amber-500" />
-                        {formattedStars}
-                     </span>
-                  </a>
-                  <a href="https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll?utm_source=item-share-cb" target="_blank" rel="noopener noreferrer" className="hidden lg:flex text-sm font-medium text-slate-500 hover:text-[#0069C3] transition-colors items-center gap-1">
-                     <Chrome size={16} /> Extension
-                  </a>
-                  <motion.a
-                     whileHover={{ scale: 1.05 }}
-                     whileTap={{ scale: 0.95 }}
-                     href={currentDownloadLink}
-                     className="px-5 py-2 bg-[#0069C3] text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-                  >
-                     <Download size={16} /> <span className="hidden sm:inline">Download</span>
-                  </motion.a>
-               </div>
+      <main>
+        {/* Hero */}
+        <section className="mx-auto max-w-6xl px-6 pb-20 pt-16 md:pt-24">
+          <div className="max-w-3xl">
+            <h1 className="font-display text-4xl font-bold tracking-tight text-[#1B2836] sm:text-5xl md:text-6xl leading-[1.06]">
+              Pack codebases for LLMs and run coding agents inside Google Colab
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[#526273]">
+              Two local tools built around one workflow: a desktop app that compresses
+              repositories using Tree-sitter AST skeletons, and a browser extension plus local
+              bridge that lets Codex or Claude Code edit Colab notebooks live.
+            </p>
+
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href={currentDownloadLink}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-5 py-3 text-sm font-semibold text-white hover:bg-[#00529B] transition-colors"
+              >
+                <Download size={16} />
+                <span>{downloadUrl ? `Download for ${osName}` : "Download Desktop"}</span>
+              </a>
+              <a
+                href="#colab-agent"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#D5DDE6] bg-white px-5 py-3 text-sm font-semibold text-[#1B2836] hover:bg-[#F7F9FB] transition-colors"
+              >
+                <Terminal size={16} />
+                <span>See Agent Terminal clips</span>
+              </a>
+              <a
+                href={CHROME_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-3 text-sm font-medium text-[#526273] hover:text-[#1B2836] transition-colors"
+              >
+                <span>Chrome Web Store</span>
+                <ArrowUpRight size={15} />
+              </a>
             </div>
-         </nav>
+          </div>
 
-         {/* Hero Section */}
-         <motion.header
-            variants={containerVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            className="relative pt-48 pb-32 px-6 z-10"
-         >
-            <div className="max-w-5xl mx-auto text-center space-y-8">
-               <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-[#0069C3] text-xs font-mono font-medium tracking-wide">
-                  <span className="relative flex h-2 w-2">
-                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                     <span className="relative inline-flex rounded-full h-2 w-2 bg-[#0069C3]"></span>
-                  </span>
-                  {latestVersion ? `DESKTOP ${latestVersion.toUpperCase()}` : 'DESKTOP AND COLAB TOOLS'}
-               </motion.div>
+          {/* Interactive Real Footage Player */}
+          <div className="mt-14">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="inline-flex rounded-lg border border-[#E3E8EE] bg-[#F7F9FB] p-1">
+                <button
+                  type="button"
+                  onClick={() => setHeroTab("colab-sync")}
+                  className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                    heroTab === "colab-sync"
+                      ? "bg-white text-[#1B2836] shadow-sm"
+                      : "text-[#526273] hover:text-[#1B2836]"
+                  }`}
+                >
+                  Colab Live Sync Clip
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeroTab("desktop")}
+                  className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                    heroTab === "desktop"
+                      ? "bg-white text-[#1B2836] shadow-sm"
+                      : "text-[#526273] hover:text-[#1B2836]"
+                  }`}
+                >
+                  Desktop AST Packer Clip
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeroTab("colab-full")}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                    heroTab === "colab-full"
+                      ? "bg-white text-[#1B2836] shadow-sm"
+                      : "text-[#526273] hover:text-[#1B2836]"
+                  }`}
+                >
+                  <Play size={12} />
+                  Full 46s Codex Walkthrough
+                </button>
+              </div>
 
-               <motion.h1 variants={itemVariants} className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[0.95] text-[#2A3947]">
-                  Stop pasting code. <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0069C3] to-cyan-600">
-                     Start Packing.
-                  </span>
-               </motion.h1>
+              <span className="font-mono text-xs text-[#6B7C8F]">
+                {heroTab === "colab-full" && "Unedited 1.0x real-time capture • codex --no-alt-screen"}
+                {heroTab === "colab-sync" && "Real Codex session syncing edits to colab.research.google.com"}
+                {heroTab === "desktop" && "Real prompt-pack-lite.app scanning 78 files with Tree-sitter + tiktoken"}
+              </span>
+            </div>
 
-               <motion.p variants={itemVariants} className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed font-light">
-                  Turn your project into useful AI context, or work with a coding agent directly inside Google Colab.
-               </motion.p>
+            <div className="overflow-hidden rounded-xl border border-[#DCE3EB] bg-white shadow-lg">
+              {heroTab === "colab-sync" && (
+                <video
+                  key="hero-sync"
+                  src="/media/clip-live-sync.mp4"
+                  poster="/media/colab-poster.jpg"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  controls
+                  className="aspect-video w-full object-cover"
+                />
+              )}
+              {heroTab === "desktop" && (
+                <video
+                  key="hero-desktop"
+                  src="/media/clip-desktop-pack.mp4"
+                  poster="/media/screenshots/desktop-workspace.png"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  controls
+                  className="aspect-[2440/1520] w-full object-cover"
+                />
+              )}
+              {heroTab === "colab-full" && (
+                <video
+                  key="hero-full"
+                  ref={fullVideoRef}
+                  src="/media/colab-showcase-full.mp4"
+                  poster="/media/colab-poster.jpg"
+                  controls
+                  autoPlay
+                  muted
+                  playsInline
+                  className="aspect-video w-full object-cover"
+                />
+              )}
+            </div>
 
-               <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
+            {/* Chapter shortcuts for the full video */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#526273]">
+              <span className="font-medium text-[#1B2836]">Jump inside the full video:</span>
+              <button
+                type="button"
+                onClick={() => jumpToFullTimestamp(1.5)}
+                className="rounded border border-[#E3E8EE] bg-white px-2.5 py-1 font-mono hover:border-[#0066C0] hover:text-[#0066C0] transition-colors"
+              >
+                0:01 Open Agent Terminal
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToFullTimestamp(6.0)}
+                className="rounded border border-[#E3E8EE] bg-white px-2.5 py-1 font-mono hover:border-[#0066C0] hover:text-[#0066C0] transition-colors"
+              >
+                0:06 Codex Reads AGENTS.md
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToFullTimestamp(14.0)}
+                className="rounded border border-[#E3E8EE] bg-white px-2.5 py-1 font-mono hover:border-[#0066C0] hover:text-[#0066C0] transition-colors"
+              >
+                0:14 Cell 3 Fix + New Cells
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToFullTimestamp(36.0)}
+                className="rounded border border-[#E3E8EE] bg-white px-2.5 py-1 font-mono hover:border-[#0066C0] hover:text-[#0066C0] transition-colors"
+              >
+                0:36 Before / After Diffs
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Agent Terminal for Google Colab */}
+        <section id="colab-agent" className="scroll-mt-20 border-t border-[#E3E8EE] bg-[#F7F9FB] py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="grid gap-12 lg:grid-cols-12 lg:items-start">
+              <div className="space-y-6 lg:col-span-5">
+                <p className="font-mono text-xs font-semibold uppercase tracking-wider text-[#0066C0]">
+                  Agent Terminal + Bridge
+                </p>
+                <h2 className="font-display text-3xl font-bold tracking-tight text-[#1B2836] sm:text-4xl">
+                  Your CLI coding agent docked right next to Colab
+                </h2>
+                <p className="text-base leading-relaxed text-[#526273]">
+                  Skip copying cells back and forth. PromptPack Bridge exports your open
+                  notebook cells into a local workspace with{" "}
+                  <code className="rounded bg-white px-1.5 py-0.5 font-mono text-xs text-[#1B2836] border border-[#E3E8EE]">
+                    AGENTS.md
+                  </code>{" "}
+                  and launches Codex, Claude Code, or any custom CLI inside the Colab panel.
+                </p>
+
+                {/* Step switcher tied to real clips */}
+                <div className="space-y-2.5 pt-2">
+                  {[
+                    {
+                      id: "start" as const,
+                      num: "01",
+                      title: "Launch Codex inside the notebook sidebar",
+                      desc: "Open PromptPack (Alt+Shift+P), pick Codex or Claude Code, and click Start session.",
+                    },
+                    {
+                      id: "sync" as const,
+                      num: "02",
+                      title: "Watch saved file edits sync straight to Colab",
+                      desc: "Agent edits to existing cells and new files in notebook/new_cells/ appear in Colab immediately.",
+                    },
+                    {
+                      id: "diff" as const,
+                      num: "03",
+                      title: "Review Before / Agent edit diffs with conflict guards",
+                      desc: "Every cell edit logs a Before/After diff. Concurrent browser edits pause cleanly under Needs attention.",
+                    },
+                  ].map((step) => {
+                    const active = colabClip === step.id;
+                    return (
+                      <button
+                        key={step.id}
+                        type="button"
+                        onClick={() => setColabClip(step.id)}
+                        className={`w-full rounded-xl border p-4 text-left transition-all ${
+                          active
+                            ? "border-[#0066C0] bg-white shadow-sm"
+                            : "border-[#E3E8EE] bg-white/60 hover:bg-white"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span
+                            className={`font-mono text-xs font-bold pt-0.5 ${
+                              active ? "text-[#0066C0]" : "text-[#6B7C8F]"
+                            }`}
+                          >
+                            {step.num}
+                          </span>
+                          <div>
+                            <div className="text-sm font-semibold text-[#1B2836]">
+                              {step.title}
+                            </div>
+                            <p className="mt-1 text-xs leading-relaxed text-[#526273]">
+                              {step.desc}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap gap-3 pt-2">
+                  {bridgeStatus.state === "available" ? (
+                    <a
+                      href={bridgeStatus.release!.html_url}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#00529B] transition-colors"
+                    >
+                      <Download size={16} />
+                      <span>
+                        {bridgeStatus.release!.prerelease
+                          ? "Download Bridge preview"
+                          : "Download Bridge"}
+                      </span>
+                    </a>
+                  ) : (
+                    <a
+                      href={COLAB_SETUP}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#00529B] transition-colors"
+                    >
+                      <span>Bridge setup guide</span>
+                    </a>
+                  )}
                   <a
-                     href={currentDownloadLink}
-                     className="px-10 py-5 bg-[#2A3947] text-white rounded-xl font-bold text-lg shadow-2xl shadow-slate-900/20 hover:bg-[#1e293b] transition-all flex items-center gap-3 w-full sm:w-auto justify-center group"
+                    href={COLAB_PREVIEW}
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#D5DDE6] bg-white px-4 py-2.5 text-sm font-semibold text-[#1B2836] hover:bg-[#F7F9FB] transition-colors"
                   >
-                     <Download size={24} />
-                     <span>{downloadUrl ? `Download Desktop for ${osName}` : "Desktop downloads"}</span>
-                     <ChevronRight size={20} className="opacity-50 group-hover:translate-x-1 transition-transform" />
+                    <Chrome size={16} />
+                    <span>Extension preview zip</span>
                   </a>
+                </div>
+
+                <p role="status" className="text-xs leading-relaxed text-[#6B7C8F]">
+                  {bridgeStatus.state === "loading" && "Checking Bridge release status…"}
+                  {bridgeStatus.state === "unavailable" && (
+                    <>
+                      Bridge installers are not published yet. See the{" "}
+                      <a className="underline text-[#1B2836]" href={COLAB_SETUP}>
+                        setup guide
+                      </a>
+                      .
+                    </>
+                  )}
+                  {bridgeStatus.state === "error" && (
+                    <>
+                      Check{" "}
+                      <a className="underline text-[#1B2836]" href={BRIDGE_RELEASES}>
+                        Bridge releases
+                      </a>{" "}
+                      on GitHub.
+                    </>
+                  )}
+                  {bridgeStatus.state === "available" &&
+                    "Bridge runs locally on 127.0.0.1:47123. In the demo recording above, Codex edits cells at 1.0x real time without running a Colab runtime (run requests work once a runtime is connected)."}
+                </p>
+              </div>
+
+              <div className="space-y-4 lg:col-span-7">
+                {/* Real clip stage for active step */}
+                <div className="overflow-hidden rounded-xl border border-[#DCE3EB] bg-white shadow-md">
+                  {colabClip === "start" && (
+                    <video
+                      key="colab-start"
+                      src="/media/clip-codex-start.mp4"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      controls
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                  {colabClip === "sync" && (
+                    <video
+                      key="colab-sync"
+                      src="/media/clip-live-sync.mp4"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      controls
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                  {colabClip === "diff" && (
+                    <video
+                      key="colab-diff"
+                      src="/media/clip-diff-review.mp4"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      controls
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                </div>
+
+                {/* Real still screenshots underneath */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <figure className="overflow-hidden rounded-xl border border-[#DCE3EB] bg-white">
+                    <img
+                      src="/media/screenshots/01-bridge-ready.png"
+                      alt="PromptPack Bridge desktop companion showing Ready for Colab"
+                      className="aspect-[16/10] w-full object-contain bg-white p-2 border-b border-[#E3E8EE]"
+                    />
+                    <figcaption className="px-3.5 py-2.5 text-xs text-[#526273]">
+                      <span className="font-semibold text-[#1B2836]">PromptPack Bridge</span> — detects installed Codex & Claude Code CLIs locally
+                    </figcaption>
+                  </figure>
+                  <figure className="overflow-hidden rounded-xl border border-[#DCE3EB] bg-white">
+                    <img
+                      src="/media/screenshots/colab-diff-panel.png"
+                      alt="PromptPack Notebook changes panel with Before and Agent edit diff"
+                      className="aspect-[16/10] w-full object-cover object-top bg-white border-b border-[#E3E8EE]"
+                    />
+                    <figcaption className="px-3.5 py-2.5 text-xs text-[#526273]">
+                      <span className="font-semibold text-[#1B2836]">Notebook changes</span> — inline Before / Agent edit diff & sync status
+                    </figcaption>
+                  </figure>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* PromptPacker Desktop App */}
+        <section id="desktop" className="scroll-mt-20 border-t border-[#E3E8EE] bg-white py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="grid gap-12 lg:grid-cols-12 lg:items-center">
+              <div className="space-y-6 lg:col-span-5">
+                <p className="font-mono text-xs font-semibold uppercase tracking-wider text-[#0066C0]">
+                  PromptPacker Desktop
+                </p>
+                <h2 className="font-display text-3xl font-bold tracking-tight text-[#1B2836] sm:text-4xl">
+                  AST context compression built with Rust and Tree-sitter
+                </h2>
+                <p className="text-base leading-relaxed text-[#526273]">
+                  Instead of pasting raw multi-hundred-line files into a chat box, mark key
+                  files as <span className="font-semibold text-[#1B2836]">Full</span> and the
+                  rest as <span className="font-semibold text-[#1B2836]">Skeleton</span>.
+                  PromptPacker parses ASTs across TypeScript, Python, Rust, Go, and C to keep
+                  types, signatures, and structure while folding bodies.
+                </p>
+
+                <ul className="space-y-3 text-sm text-[#1B2836]">
+                  <li className="flex items-start gap-2.5">
+                    <Check size={16} className="mt-0.5 shrink-0 text-[#0066C0]" />
+                    <span>
+                      Respects <code className="font-mono text-xs">.gitignore</code> and skips binaries & lockfiles automatically
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={16} className="mt-0.5 shrink-0 text-[#0066C0]" />
+                    <span>
+                      Live <code className="font-mono text-xs">tiktoken</code> token estimates update as you toggle files
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check size={16} className="mt-0.5 shrink-0 text-[#0066C0]" />
+                    <span>
+                      Built-in filesystem watcher plus Snapshot & Diff export for changed code
+                    </span>
+                  </li>
+                </ul>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
                   <a
-                     href="https://chromewebstore.google.com/detail/piniclchmidgfainpldphnocipgilmll?utm_source=item-share-cb"
-                     target="_blank"
-                     rel="noopener noreferrer"
-                     className="px-10 py-5 bg-white text-[#2A3947] border border-slate-200 rounded-xl font-bold text-lg shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 w-full sm:w-auto justify-center group"
+                    href={currentDownloadLink}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#00529B] transition-colors"
                   >
-                     <Chrome size={24} className="text-[#0069C3]" />
-                     <span>Chrome Extension</span>
-                     <ChevronRight size={20} className="opacity-50 group-hover:translate-x-1 transition-transform text-slate-300" />
+                    <Download size={16} />
+                    <span>Download Desktop for {osName}</span>
                   </a>
-               </motion.div>
+                </div>
+              </div>
 
-               <motion.a variants={itemVariants} href="#colab-agent" className="inline-flex items-center gap-2 text-[#0069C3] font-semibold hover:underline">
-                  Explore Agent Terminal for Colab <ArrowRight size={17} />
-               </motion.a>
-               <motion.div variants={itemVariants} className="pt-12">
-                  <div className="relative mx-auto max-w-5xl bg-white rounded-xl overflow-hidden border border-slate-200 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)]">
-                     {/* Window Header */}
-                     <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
-                        <div className="flex gap-2">
-                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
-                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
-                           <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
-                        </div>
-                        <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">PromptPacker — Desktop</div>
-                        <div className="w-12"></div>
-                     </div>
+              <div className="space-y-3 lg:col-span-7">
+                <div className="flex items-center gap-1.5">
+                  {(
+                    [
+                      ["clip", "Live App Clip"],
+                      ["workspace", "78-File Workspace"],
+                      ["output", "Generated AST Prompt"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setDesktopView(id)}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        desktopView === id
+                          ? "border-[#0066C0] bg-[#0066C0]/5 text-[#0066C0]"
+                          : "border-[#E3E8EE] bg-white text-[#526273] hover:text-[#1B2836]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
-                     <div className="flex h-[400px]">
-                        {/* Sidebar Mockup */}
-                        <div className="w-64 border-r border-slate-100 bg-white p-4 space-y-4 hidden md:block">
-                           <div className="flex items-center justify-between">
-                              <div className="text-[10px] font-bold text-slate-400 uppercase">Files</div>
-                              <div className="w-4 h-4 rounded bg-slate-100"></div>
-                           </div>
-                           <div className="space-y-2">
-                              {[1, 2, 3, 4, 5, 6].map(i => (
-                                 <div key={i} className="flex items-center gap-2">
-                                    <div className={`w-3 h-3 rounded ${i === 2 ? 'bg-blue-100' : 'bg-slate-100'}`}></div>
-                                    <div className={`h-2 rounded ${i === 2 ? 'bg-blue-100 w-24' : 'bg-slate-100 w-32'}`}></div>
-                                 </div>
-                              ))}
-                           </div>
-                        </div>
-
-                        {/* Main Content Mockup */}
-                        <div className="flex-1 p-8 text-left space-y-6 bg-white">
-                           <div className="space-y-3">
-                              <div className="h-3 w-32 bg-slate-100 rounded"></div>
-                              <div className="h-24 w-full bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
-                                 <div className="h-2 w-3/4 bg-slate-100 rounded"></div>
-                                 <div className="h-2 w-1/2 bg-slate-100 rounded mt-2"></div>
-                              </div>
-                           </div>
-                           <div className="space-y-3">
-                              <div className="h-3 w-24 bg-slate-100 rounded"></div>
-                              <div className="h-16 w-full bg-white border border-slate-200 rounded-lg shadow-sm"></div>
-                           </div>
-                           <div className="pt-4 flex justify-end">
-                              <div className="px-6 py-3 bg-[#0069C3] rounded-lg text-white text-xs font-bold font-display shadow-lg shadow-blue-500/20">
-                                 GENERATE PROMPT
-                              </div>
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-               </motion.div>
+                <div className="overflow-hidden rounded-xl border border-[#DCE3EB] bg-white shadow-md">
+                  {desktopView === "clip" && (
+                    <video
+                      key="desktop-clip"
+                      src="/media/clip-desktop-pack.mp4"
+                      poster="/media/screenshots/desktop-workspace.png"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      controls
+                      className="aspect-[2440/1520] w-full object-cover"
+                    />
+                  )}
+                  {desktopView === "workspace" && (
+                    <img
+                      src="/media/screenshots/desktop-workspace.png"
+                      alt="prompt-pack-lite desktop workspace showing 78 files selected in Skeleton mode"
+                      className="aspect-[2440/1520] w-full object-cover object-top bg-white"
+                    />
+                  )}
+                  {desktopView === "output" && (
+                    <img
+                      src="/media/screenshots/desktop-output.png"
+                      alt="prompt-pack-lite Prompt Generated modal ready to copy"
+                      className="aspect-[2440/1520] w-full object-cover object-top bg-white"
+                    />
+                  )}
+                </div>
+              </div>
             </div>
-         </motion.header>
+          </div>
+        </section>
 
-         <section id="colab-agent" className="relative z-10 scroll-mt-24 border-y border-blue-100 bg-[#f4f9fd] px-6 py-24 md:py-32">
-            <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-2 lg:items-center">
-               <div className="space-y-7">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#0069C3]">
-                     <Terminal size={15} /> Agent Terminal for Colab
-                  </div>
-                  <h2 className="font-display text-4xl font-bold tracking-tight text-[#2A3947] md:text-5xl">Your coding agent, right in your notebook.</h2>
-                  <p className="text-lg leading-relaxed text-slate-600">Use Codex, Claude Code, or another installed command-line agent from PromptPack. Ask it to edit, add, move, or delete cells, and see changes sync into your open notebook.</p>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                     {[
-                        ["1", "Get the extension", "Install the current development build for Agent Terminal."],
-                        ["2", "Open Bridge", "Run the companion app on your computer."],
-                        ["3", "Start your agent", "Open Colab, choose Agent Terminal, and start a session."],
-                     ].map(([number, title, detail]) => (
-                        <div key={number} className="rounded-xl border border-blue-100 bg-white p-4">
-                           <span className="font-mono text-xs font-bold text-[#0069C3]">{number.padStart(2, "0")}</span>
-                           <h3 className="mt-2 font-bold text-[#2A3947]">{title}</h3>
-                           <p className="mt-1 text-sm leading-relaxed text-slate-500">{detail}</p>
-                        </div>
-                     ))}
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                     {bridgeStatus.state === "available" ? (
-                        <a href={bridgeStatus.release!.html_url} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700"><Download size={18} /> {bridgeStatus.release!.prerelease ? "Download Bridge preview" : "Download Bridge"}</a>
-                     ) : (
-                        <a href={COLAB_SETUP} className="inline-flex items-center gap-2 rounded-xl bg-[#0069C3] px-6 py-3 font-bold text-white hover:bg-blue-700">Bridge setup guide <ArrowRight size={18} /></a>
-                     )}
-                     <a href={COLAB_PREVIEW} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 font-bold text-[#2A3947] hover:bg-slate-50"><Chrome size={18} /> Download extension preview</a>
-                  </div>
-                  <p role="status" className="text-sm leading-relaxed text-slate-500">
-                     {bridgeStatus.state === "loading" && "Checking Bridge downloads…"}
-                     {bridgeStatus.state === "unavailable" && <>Bridge installers are not published yet. See the <a className="underline" href={COLAB_SETUP}>setup guide</a> for the current preview.</>}
-                     {bridgeStatus.state === "error" && <>We couldn’t check Bridge downloads. See <a className="underline" href={BRIDGE_RELEASES}>Bridge releases</a> and the <a className="underline" href={COLAB_SETUP}>setup guide</a>.</>}
-                     {bridgeStatus.state === "available" && <>{bridgeStatus.release!.prerelease && "Preview installers are unsigned and your computer may show a warning. "}Choose your operating system on the release page. Bridge runs locally; your coding agent is installed and signed in separately.</>}
+        {/* Architecture & Local Guarantees */}
+        <section id="architecture" className="scroll-mt-20 border-t border-[#E3E8EE] bg-[#F7F9FB] py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="max-w-2xl">
+              <p className="font-mono text-xs font-semibold uppercase tracking-wider text-[#0066C0]">
+                Architecture
+              </p>
+              <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-[#1B2836]">
+                Local tools under your own accounts
+              </h2>
+            </div>
+
+            <div className="mt-10 grid overflow-hidden rounded-xl border border-[#DCE3EB] bg-white md:grid-cols-3 md:divide-x md:divide-[#E3E8EE]">
+              <div className="p-7">
+                <h3 className="text-base font-semibold text-[#1B2836]">
+                  Strict loopback binding
+                </h3>
+                <p className="mt-2.5 text-sm leading-relaxed text-[#526273]">
+                  PromptPack Bridge binds strictly to{" "}
+                  <code className="font-mono text-xs text-[#1B2836]">127.0.0.1:47123</code> and
+                  rejects ordinary browser origins—only Chrome extension pages and local
+                  clients can connect.
+                </p>
+              </div>
+              <div className="border-t border-[#E3E8EE] p-7 md:border-t-0">
+                <h3 className="text-base font-semibold text-[#1B2836]">
+                  Persistent cell mapping
+                </h3>
+                <p className="mt-2.5 text-sm leading-relaxed text-[#526273]">
+                  Existing notebook cells sync cleanly to local{" "}
+                  <code className="font-mono text-xs text-[#1B2836]">.py</code> and{" "}
+                  <code className="font-mono text-xs text-[#1B2836]">.md</code> files, while
+                  new files in{" "}
+                  <code className="font-mono text-xs text-[#1B2836]">notebook/new_cells/</code>{" "}
+                  append with stable Colab cell IDs.
+                </p>
+              </div>
+              <div className="border-t border-[#E3E8EE] p-7 md:border-t-0">
+                <h3 className="text-base font-semibold text-[#1B2836]">
+                  Zero cloud middleman
+                </h3>
+                <p className="mt-2.5 text-sm leading-relaxed text-[#526273]">
+                  No PromptPack servers sit between you and your LLM. Desktop scanning uses
+                  local Tauri + Rust; Agent Terminal runs your local Codex or Claude CLI with
+                  your own credentials and approvals.
+                </p>
+              </div>
+            </div>
+
+            {/* Final CTA Band */}
+            <div className="mt-14 flex flex-col items-start justify-between gap-6 rounded-xl border border-[#DCE3EB] bg-white p-8 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-4">
+                <img
+                  src="/logo-mark.png"
+                  alt="PromptPacker mark"
+                  className="h-12 w-12 shrink-0 object-contain"
+                />
+                <div>
+                  <h3 className="font-display text-xl font-bold text-[#1B2836]">
+                    Start packing codebases or launch Codex in Colab
+                  </h3>
+                  <p className="mt-1 text-sm text-[#526273]">
+                    Open source under Apache-2.0 for macOS, Windows, Linux, and Chrome.
                   </p>
-               </div>
-               <div className="overflow-hidden rounded-2xl border border-slate-700 bg-[#182635] shadow-2xl shadow-slate-900/20">
-                  <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4 text-sm font-semibold text-slate-200"><NotebookPen size={17} className="text-sky-300" /> Colab <span className="text-slate-500">/</span> Agent Terminal</div>
-                  <div className="space-y-5 p-6 font-mono text-sm leading-relaxed md:p-8">
-                     <p className="text-slate-300"><span className="text-sky-300">You</span> &nbsp;Add a plot of the model predictions after the evaluation cell.</p>
-                     <p className="text-slate-300"><span className="text-emerald-300">Agent</span> &nbsp;I’ll add a code cell after evaluation and label the axes.</p>
-                     <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-slate-400">Saved changes sync to your open notebook.<br />Your agent’s normal approvals still apply.</div>
-                  </div>
-               </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={currentDownloadLink}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#0066C0] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#00529B] transition-colors"
+                >
+                  <Download size={16} />
+                  <span>Download Desktop</span>
+                </a>
+                <a
+                  href={`https://github.com/${REPO_OWNER}/${REPO_NAME}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#D5DDE6] bg-white px-5 py-2.5 text-sm font-semibold text-[#1B2836] hover:bg-[#F7F9FB] transition-colors"
+                >
+                  <Github size={16} />
+                  <span>View source</span>
+                </a>
+              </div>
             </div>
-         </section>
+          </div>
+        </section>
+      </main>
 
-         {/* SOTA Compression Feature Section */}
-         <section className="py-32 px-6 relative z-10 border-t border-slate-100 bg-slate-50/50">
-            <div className="max-w-7xl mx-auto">
-               <div className="grid lg:grid-cols-2 gap-16 items-center">
-                  <div className="space-y-8 text-left">
-                     <h2 className="font-display text-4xl font-bold tracking-tight text-[#2A3947]">
-                        Signal over Noise. <br />
-                        <span className="text-[#0069C3]">AST-Based Compression.</span>
-                     </h2>
-                     <p className="text-lg text-slate-500 leading-relaxed">
-                        Traditional tools blindly concatenate files. PromptPacker parses the Abstract Syntax Tree (AST) of your code to understand its structure. It keeps signatures, types, and interfaces while folding implementation details.
-                     </p>
-
-                     <div className="grid sm:grid-cols-2 gap-6 pt-4">
-                        <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
-                           <div className="w-10 h-10 rounded bg-blue-50 flex items-center justify-center mb-3">
-                              <Layers size={20} className="text-[#0069C3]" />
-                           </div>
-                           <h4 className="font-bold text-[#2A3947] mb-1">Structural Integrity</h4>
-                           <p className="text-sm text-slate-500">Preserves class hierarchies and function signatures.</p>
-                        </div>
-                        <div className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm">
-                           <div className="w-10 h-10 rounded bg-cyan-50 flex items-center justify-center mb-3">
-                              <Zap size={20} className="text-cyan-600" />
-                           </div>
-                           <h4 className="font-bold text-[#2A3947] mb-1">Token Efficiency</h4>
-                           <p className="text-sm text-slate-500">Reduces context usage by up to 80% without losing meaning.</p>
-                        </div>
-                     </div>
-                  </div>
-
-                  <div className="relative">
-                     <div className="absolute -inset-1 bg-gradient-to-r from-[#0069C3] to-cyan-500 rounded-2xl blur opacity-10"></div>
-                     <div className="relative bg-white rounded-xl overflow-hidden border border-slate-200 shadow-2xl">
-                        {/* App Output Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
-                           <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                                 <CheckCircle2 size={18} className="text-[#0069C3]" />
-                              </div>
-                              <div className="text-left">
-                                 <div className="text-sm font-bold text-[#2A3947]">Prompt Generated</div>
-                                 <div className="text-[10px] text-slate-500 uppercase font-mono">12,450 Tokens • 42 Files</div>
-                              </div>
-                           </div>
-                        </div>
-
-                        {/* App Output Content */}
-                        <div className="p-6 bg-slate-50 font-mono text-[11px] text-slate-500 text-left h-[260px] overflow-hidden">
-                           <div className="space-y-4">
-                              <div className="text-[#0069C3]">--- PROMPT PREAMBLE ---</div>
-                              <div>This project is a React/Rust application using Tauri v2...</div>
-                              <div className="text-[#0069C3] pt-2">--- FILE TREE ---</div>
-                              <div className="space-y-1 opacity-70">
-                                 <div>src/</div>
-                                 <div>  main.rs</div>
-                                 <div>  skeleton.rs</div>
-                              </div>
-                              <div className="text-[#0069C3] pt-2">--- FILE: src/skeleton.rs (SKELETON) ---</div>
-                              <div className="bg-white p-2 rounded border border-slate-200">
-                                 <div className="text-pink-600 font-bold">pub fn</div> <span className="text-[#0069C3]">skeletonize</span>(code: &str) {"{ /* ... */ }"}
-                              </div>
-                           </div>
-                        </div>
-
-                        {/* App Output Footer */}
-                        <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
-                           <div className="px-4 py-2 bg-[#0069C3] text-white rounded text-[11px] font-bold shadow-sm">
-                              COPY TO CLIPBOARD
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         </section>
-
-         {/* Features Grid */}
-         <section id="features" className="py-32 px-6">
-            <div className="max-w-7xl mx-auto">
-               <div className="text-center mb-20 space-y-4">
-                  <h2 className="font-display text-4xl md:text-5xl font-bold text-[#2A3947] text-glow">Engineered for Flow.</h2>
-                  <p className="text-slate-500 text-lg">Local-first, privacy-focused, and blazing fast.</p>
-               </div>
-               <div className="grid md:grid-cols-3 gap-6">
-                  <Feature
-                     icon={<Zap className="text-[#0069C3]" size={24} />}
-                     title="Real-time Watcher"
-                     desc="Background service watches your filesystem. Changes are reflected in the UI instantly. No manual re-scanning."
-                     delay={0.1}
-                  />
-                  <Feature
-                     icon={<FileCode className="text-cyan-600" size={24} />}
-                     title="Smart Ignore"
-                     desc="Respects .gitignore out of the box. Automatically filters lockfiles and binaries."
-                     delay={0.2}
-                  />
-                  <Feature
-                     icon={<Cpu className="text-[#2A3947]" size={24} />}
-                     title="Rust Native"
-                     desc="Built on Tauri v2 and Rust for a tiny memory footprint and millisecond performance."
-                     delay={0.3}
-                  />
-               </div>
-            </div>
-         </section>
-
-         {/* Privacy Section */}
-         <section className="py-24 px-6 relative overflow-hidden">
-            <div className="max-w-4xl mx-auto tech-card rounded-[32px] p-12 md:p-20 text-center relative overflow-hidden bg-slate-50/50">
-               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#0069C3]/30 to-transparent" />
-               <div className="space-y-8 relative z-10">
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-50 border border-green-100 text-green-700 text-xs font-bold uppercase tracking-widest">
-                     <ShieldCheck size={14} /> Local First
-                  </div>
-                  <h2 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[#2A3947]">Local tools, connected to your workflow.</h2>
-                  <p className="text-lg text-slate-500 leading-relaxed max-w-2xl mx-auto">
-                     PromptPack Bridge runs on your computer and connects to the Colab page in your browser. Your chosen coding agent and Google Colab may send data to their own services under their respective settings.
-                  </p>
-               </div>
-            </div>
-         </section>
-
-         <footer className="py-12 border-t border-slate-100 bg-white">
-            <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
-               <div className="flex items-center gap-3">
-                  <img src="/logo.png" alt="Logo" className="h-6 w-auto opacity-60" />
-                  <span className="font-bold text-lg tracking-tight text-[#2A3947]">PromptPacker</span>
-               </div>
-               <p className="text-sm text-slate-400">© 2025 PromptPacker. Build with Rust.</p>
-               <div className="flex items-center gap-6">
-                  <a href="/privacy.html" className="text-slate-400 hover:text-[#0069C3] transition-colors">Privacy</a>
-                  <a href="https://github.com/ClarkOhlenbusch/PromptPacker" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#0069C3] transition-colors flex items-center gap-1">
-                     <Github size={16} /> GitHub
-                  </a>
-               </div>
-            </div>
-         </footer>
-      </div>
-   );
-}
-
-function Feature({ icon, title, desc, delay }: { icon: React.ReactNode, title: string, desc: string, delay: number }) {
-   return (
-      <motion.div
-         initial={{ y: 20, opacity: 0 }}
-         whileInView={{ y: 0, opacity: 1 }}
-         transition={{ delay, duration: 0.6 }}
-         viewport={{ once: true }}
-         className="bg-white border border-slate-100 p-8 rounded-2xl shadow-sm hover:shadow-md hover:border-[#0069C3]/20 transition-all duration-300 group text-left"
-      >
-         <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 mb-6 group-hover:scale-110 transition-transform duration-300 group-hover:bg-blue-50">
-            {icon}
-         </div>
-         <h3 className="text-xl font-bold text-[#2A3947] mb-3 group-hover:text-[#0069C3] transition-colors">{title}</h3>
-         <p className="text-slate-500 leading-relaxed text-sm">
-            {desc}
-         </p>
-      </motion.div>
-   )
+      <footer className="border-t border-[#E3E8EE] bg-white py-10">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo-mark.png" alt="PromptPacker mark" className="h-6 w-6 object-contain" />
+            <span className="font-display text-sm font-semibold text-[#1B2836]">PromptPacker</span>
+            <span className="text-xs text-[#6B7C8F]">Apache-2.0</span>
+          </div>
+          <div className="flex items-center gap-6 text-sm text-[#526273]">
+            <a href="/privacy.html" className="hover:text-[#1B2836] transition-colors">
+              Privacy
+            </a>
+            <a href={BRIDGE_RELEASES} target="_blank" rel="noopener noreferrer" className="hover:text-[#1B2836] transition-colors">
+              Bridge Releases
+            </a>
+            <a
+              href={`https://github.com/${REPO_OWNER}/${REPO_NAME}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#1B2836] transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
 }

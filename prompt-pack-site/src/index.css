@@ -3,43 +3,29 @@
 @tailwind utilities;
 
 :root {
-  --packer-blue: #0069C3;
-  --packer-blue-glow: rgba(0, 105, 195, 0.1);
-  --packer-text-color: #2A3947;
-  --packer-bg: #FFFFFF;
+  --ink: #1B2836;
+  --ink-muted: #526273;
+  --accent: #0066C0;
+  --accent-hover: #00529B;
+  --surface: #FFFFFF;
+  --surface-subtle: #F7F9FB;
+  --border: #E3E8EE;
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply antialiased;
-    background-color: var(--packer-bg);
-    color: var(--packer-text-color);
+    background-color: var(--surface);
+    color: var(--ink);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
-@layer components {
-  .glass {
-    @apply bg-white/80 backdrop-blur-xl border-b border-slate-200/50;
-  }
-
-  .tech-card {
-    @apply bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-packer-blue/30 transition-all duration-300;
-  }
-
-  .text-glow {
-    text-shadow: 0 0 20px var(--packer-blue-glow);
-  }
-  
-  .tech-grid {
-    background-size: 50px 50px;
-    background-image: linear-gradient(to right, rgba(0, 105, 195, 0.03) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(0, 105, 195, 0.03) 1px, transparent 1px);
-    mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
-  }
-}
-
-/* Custom Scrollbar */
+/* Subtle scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

@@ -4,30 +4,43 @@ Thank you for your interest in contributing to PromptPacker! This project is **o
 
 ## Development Workflow
 
-1.  **Branching:**
-    *   Create a new branch for every feature or bug fix.
+1.  **Fork & Branch:**
+    *   `main` is the primary (and only) upstream branch.
+    *   Fork the repository, then create a branch on your fork for every feature or bug fix (do not push directly to `main`).
     *   Use the format: `feature/your-feature-name` or `fix/bug-description`.
-    *   Do not commit directly to `main`.
+    *   Open a Pull Request from your branch targeting `main`.
 
 2.  **Commit Messages:**
     *   Write clear, concise commit messages.
     *   Start with a verb (e.g., "Add", "Fix", "Update", "Remove").
     *   Example: `Add tree-sitter support for Python files`
 
-3.  **Code Style:**
-    *   **TypeScript/React:** We use standard Prettier configuration. Ensure your editor formats on save.
-    *   **Rust:** Use `cargo fmt` to format Rust code.
-    *   **Linting:** Run `npm run lint` (or equivalent) before pushing to catch potential errors.
+3.  **Code Style & Checks:**
+    *   **TypeScript/React:** Match the existing formatting and ensure TypeScript compiles cleanly (`npm run build` in the subproject you modified; `prompt-pack-site` also provides `npm run lint`).
+    *   **Rust:** Run `cargo fmt` inside `prompt-pack-lite/src-tauri` to format Rust code.
 
-## Project Structure specifics
+## Project Structure Specifics
 
-*   **`prompt-pack-lite/src-tauri`**: Contains the Rust backend. Any file system operations or heavy lifting should be implemented here as a Tauri command.
-*   **`ColabPromptPack/public`**: Contains the Manifest V3 extension scripts (`background.js`, `content.js`). Be careful when modifying `content.js` as it interacts directly with the Google Colab DOM, which can be fragile.
+*   **`prompt-pack-lite`**: Desktop app (React/TypeScript frontend + `src-tauri` Rust backend). File system operations and AST skeletonization live in `prompt-pack-lite/src-tauri`.
+*   **`ColabPromptPack`**: Chrome Manifest V3 extension. Be careful when modifying `content.ts` / `injected.ts` as they interact directly with the Google Colab DOM, which can be fragile.
+*   **`promptpack-bridge`**: Local Node/Electron companion bridge for Colab Agent Terminal.
+*   **`prompt-pack-site`**: Marketing and download site.
 
 ## Testing
 
-*   **Desktop:** Run the app using `npm run tauri dev` and manually verify your changes.
-*   **Extension:** You must reload the extension in `chrome://extensions` and refresh the Colab tab to see changes.
+Run the relevant automated checks for any subproject you touch (see [TESTING.md](TESTING.md) for details):
+
+*   **PromptPack Lite (Desktop):**
+    *   Rust backend: `cd prompt-pack-lite/src-tauri && cargo test`
+    *   Frontend: `cd prompt-pack-lite && npx vitest run && npm run build`
+    *   Manual check: `cd prompt-pack-lite && npm run tauri dev`
+*   **ColabPromptPack (Extension):**
+    *   Unit tests & build: `cd ColabPromptPack && npx vitest run && npm run build`
+    *   Manual check: reload the `dist` folder in `chrome://extensions` and refresh the Colab tab.
+*   **PromptPack Bridge:**
+    *   Tests: `cd promptpack-bridge && npm test`
+*   **PromptPack Site:**
+    *   Lint & build: `cd prompt-pack-site && npm run lint && npm run build`
 
 ## Reporting Bugs
 
